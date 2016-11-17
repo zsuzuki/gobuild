@@ -24,6 +24,7 @@ type Target struct {
 }
 type StringList struct {
     Type string
+    Target string
     Debug []string `yaml:",flow"`
     Release []string `yaml:",flow"`
     List []string `yaml:",flow"`
@@ -41,7 +42,7 @@ type Build struct {
 }
 
 type Data struct {
-    Target Target
+    Target []Target `yaml:",flow"`
     Include []StringList `yaml:",flow"`
     Variable []Variable `yaml:",flow"`
     Define []StringList `yaml:",flow"`
@@ -55,6 +56,10 @@ type Data struct {
     Subdir []StringList `yaml:",flow"`
 }
 
+//
+// error
+//
+
 type MyError struct {
     str string
 }
@@ -62,17 +67,24 @@ func (m MyError) Error() string {
     return m.str
 }
 
+//
+// build information
+//
+
+//
 type BuildCommand struct {
     cmd string
     args string
     title string
 }
 
+//
 type BuildResult struct {
     success bool
     create_list []string
 }
 
+//
 type BuildInfo struct {
     variables map[string] string
     includes string
@@ -80,6 +92,8 @@ type BuildInfo struct {
     options string
     archive_options string
     convert_options string
+    select_target string
+    target string
     subdir []string
     create_list []string
 }
@@ -91,6 +105,7 @@ var (
     isDebug bool
     isRelease bool
     target_type string
+    target_name string
     outputdir string
 
     need_dir_list []string
@@ -106,10 +121,10 @@ var (
 //
 //
 //
-func getList(block []StringList) []string {
+func getList(block []StringList,target_name string) []string {
     lists := [] string{}
     for _,i := range block {
-        if i.Type == "" || i.Type == target_type {
+        if (i.Type == "" || i.Type == target_type) && (i.Target == "" || i.Target == target_name) {
             for _,l := range i.List {
                 lists = append(lists,l)
             }
@@ -233,19 +248,35 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         return result,e
     }
 
-    NowTarget := d.Target
+    //
+    // select target
+    //
+    var NowTarget Target
+    for _,t := range d.Target {
+        if info.select_target == "" || t.Name == info.select_target {
+            NowTarget = t
+            if info.target == "" {
+                info.target = t.Name
+            }
+            break
+        }
+    }
     if NowTarget.Name == "" {
         e := MyError{ str : "No Target" }
         result.success = false
         return result,e
     }
+    info.select_target = ""
 
+    //
+    // get rules
+    //
     for _,v := range d.Variable {
         if v.Type == "" || v.Type == target_type {
             info.variables[v.Name] = v.Value
         }
     }
-    for _,i := range getList(d.Include) {
+    for _,i := range getList(d.Include,info.target) {
         abs, err := filepath.Abs(i)
         if err != nil {
             result.success = false
@@ -257,35 +288,35 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             info.defines += " -I" + abs
         }
     }
-    for _,d := range getList(d.Define) {
+    for _,d := range getList(d.Define,info.target) {
         if target_type == "WIN32" {
             info.defines += " /D:" + d
         } else {
             info.defines += " -D" + d
         }
     }
-    for _,o := range getList(d.Option) {
+    for _,o := range getList(d.Option,info.target) {
         if target_type == "WIN32" {
             info.options += " /" + o
         } else {
             info.options += " -" + o
         }
     }
-    for _,a := range getList(d.Archive_Option) {
+    for _,a := range getList(d.Archive_Option,info.target) {
         if target_type == "WIN32" {
             info.archive_options += "/" + a + " "
         } else {
             info.archive_options += "-" + a + " "
         }
     }
-    for _,c := range getList(d.Convert_Option) {
+    for _,c := range getList(d.Convert_Option,info.target) {
         info.convert_options +=  c + " "
     }
 
-    files := getList(d.Source)
-    cvfiles := getList(d.Convert_List)
+    files := getList(d.Source,info.target)
+    cvfiles := getList(d.Convert_List,info.target)
 
-    subdirs := getList(d.Subdir)
+    subdirs := getList(d.Subdir,info.target)
     for _,s := range subdirs {
         sd := loaddir+s
         var r,e = build(info,sd)
@@ -352,6 +383,7 @@ func main() {
     flag.BoolVar(&isRelease,"release",false,"release build")
     flag.BoolVar(&isDebug,"debug",true,"debug build")
     flag.StringVar(&target_type,"type","default","build target type")
+    flag.StringVar(&target_name,"t","","build target name")
     flag.StringVar(&outputdir,"o","build","build directory")
     flag.Parse()
 
@@ -363,7 +395,12 @@ func main() {
         outputdir += "Debug"
     }
 
-    build_info := BuildInfo{ variables : map[string] string{}, includes : "", defines : "" }
+    build_info := BuildInfo{
+        variables : map[string] string{},
+        includes : "",
+        defines : "",
+        select_target : target_name,
+        target: target_name }
     var r,err = build(build_info,"")
     if r.success == false {
         fmt.Println("Error:",err.Error())

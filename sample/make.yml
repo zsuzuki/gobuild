@@ -33,12 +33,17 @@ library:
   - stdc
 
 source:
-- list:
+- target: test
+  list:
   - test.cpp
+- target: test2
+  list:
+  - test2.cpp
 
 target:
-  name: test
-#  type: library
+- name: test
+  type: execute
+- name: test2
   type: execute
 
 subdir:

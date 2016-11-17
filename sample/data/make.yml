@@ -7,7 +7,7 @@ source:
   - data.cpp
 
 target:
-  name: data
+- name: data
   type: library
 
 # end
