@@ -47,9 +47,11 @@ type Data struct {
     Define []StringList `yaml:",flow"`
     Option []StringList `yaml:",flow"`
     Archive_Option []StringList `yaml:",flow"`
+    Convert_Option []StringList `yaml:",flow"`
     Prebuild []Build `yaml:",flow"`
     Postbuild []Build `yaml:",flow"`
     Source []StringList `yaml:",flow"`
+    Convert_List []StringList `yaml:",flow"`
     Subdir []StringList `yaml:",flow"`
 }
 
@@ -77,6 +79,7 @@ type BuildInfo struct {
     defines string
     options string
     archive_options string
+    convert_options string
     subdir []string
     create_list []string
 }
@@ -95,7 +98,13 @@ var (
 )
 
 //
+//
 // build functions
+//
+//
+
+//
+//
 //
 func getList(block []StringList) []string {
     lists := [] string{}
@@ -118,6 +127,89 @@ func getList(block []StringList) []string {
     return lists
 }
 
+//
+// archive objects
+//
+func create_archive(info BuildInfo,odir string,create_list []string,target_name string) string {
+    arname := odir
+    if target_type == "WIN32" {
+        arname += target_name + ".lib"
+    } else {
+        arname += "lib" + target_name + ".a"
+    }
+    arname = filepath.ToSlash(filepath.Clean(arname))
+
+    archiver := info.variables["archiver"]
+    alist := ""
+    for _,l := range create_list {
+        alist += " " + l
+    }
+
+    t := fmt.Sprintf("Library: %s",arname)
+    cmd := BuildCommand{
+        cmd : archiver,
+        args : info.archive_options+arname+alist,
+        title : t }
+    command_list = append(command_list,cmd)
+
+    return arname
+}
+
+//
+// link objects
+//
+func create_link(info BuildInfo,odir string,create_list []string,target_name string) {
+    trname := odir
+    if target_type == "WIN32" {
+        trname += target_name + ".exe"
+    } else {
+        trname += target_name
+    }
+    trname = filepath.ToSlash(filepath.Clean(trname))
+
+    linker := info.variables["linker"]
+
+    create_list = append(info.create_list,create_list...)
+
+    flist := ""
+    for _,l := range create_list {
+        flist += " " + l
+    }
+
+    t := fmt.Sprintf("Linking: %s",trname)
+    cmd := BuildCommand{
+        cmd : linker,
+        args : "-o " + trname + flist,
+        title : t }
+    command_list = append(command_list,cmd)
+    //fmt.Println("-o " + NowTarget.Name + flist)
+}
+
+//
+// convert objects
+//
+func create_convert(info BuildInfo,loaddir string,odir string,create_list []string,target_name string) {
+    cvname := odir + target_name
+    cvname = filepath.ToSlash(filepath.Clean(cvname))
+    clist := ""
+    converter := info.variables["converter"]
+
+    for _,f := range create_list {
+        clist += " " + filepath.ToSlash(filepath.Clean(loaddir+f))
+    }
+
+    t := fmt.Sprintf("Convert: %s",cvname)
+    cmd := BuildCommand{
+        cmd : converter,
+        args : info.convert_options+"-o "+cvname+clist,
+        title : t }
+    command_list = append(command_list,cmd)
+}
+
+
+//
+// build main
+//
 func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     loaddir := pathname
     if loaddir == "" {
@@ -186,8 +278,12 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             info.archive_options += "-" + a + " "
         }
     }
+    for _,c := range getList(d.Convert_Option) {
+        info.convert_options +=  c + " "
+    }
 
     files := getList(d.Source)
+    cvfiles := getList(d.Convert_List)
 
     subdirs := getList(d.Subdir)
     for _,s := range subdirs {
@@ -204,6 +300,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     arg1 := info.includes + info.defines + info.options
     odir := outputdir + "/" + loaddir
     need_dir_list = append(need_dir_list,filepath.Clean(odir))
+
     create_list := []string{}
     for _,f := range files {
         sname := filepath.ToSlash(filepath.Clean(loaddir+f))
@@ -219,61 +316,26 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
 
     if NowTarget.Type == "library" {
-        //
-        // archive objects
-        //
+        // archive
         if len(create_list) > 0 {
-            arname := odir
-            if target_type == "WIN32" {
-                arname += NowTarget.Name + ".lib"
-            } else {
-                arname += "lib" + NowTarget.Name + ".a"
-            }
-            arname = filepath.ToSlash(filepath.Clean(arname))
-
-            archiver := info.variables["archiver"]
-            alist := ""
-            for _,l := range create_list {
-                alist += " " + l
-            }
-
-            t := fmt.Sprintf("Library: %s",arname)
-            cmd := BuildCommand{
-                cmd : archiver,
-                args : info.archive_options+arname+alist,
-                title : t }
-            command_list = append(command_list,cmd)
+            arname := create_archive(info,odir,create_list,NowTarget.Name)
             result.create_list = append(info.create_list,arname)
-            fmt.Println(info.archive_options+arname+alist)
+            //fmt.Println(info.archive_options+arname+alist)
+        } else {
+            fmt.Println("There are no files to build.")
         }
     } else if NowTarget.Type == "execute" {
-        //
         // link program
-        //
-        create_list = append(info.create_list,create_list...)
-        if len(create_list) > 0 {
-            trname := odir
-            if target_type == "WIN32" {
-                trname += NowTarget.Name + ".exe"
-            } else {
-                trname += NowTarget.Name
-            }
-            trname = filepath.ToSlash(filepath.Clean(trname))
-
-            linker := info.variables["linker"]
-
-            flist := ""
-            for _,l := range create_list {
-                flist += " " + l
-            }
-
-            t := fmt.Sprintf("Linking: %s",trname)
-            cmd := BuildCommand{
-                cmd : linker,
-                args : "-o " + trname + flist,
-                title : t }
-            command_list = append(command_list,cmd)
-            fmt.Println("-o " + NowTarget.Name + flist)
+        if len(create_list) > 0 && len(info.create_list) > 0 {
+            create_link(info,odir,create_list,NowTarget.Name)
+        } else {
+            fmt.Println("There are no files to build.")
+        }
+    } else if NowTarget.Type == "convert" {
+        if len(cvfiles) > 0 {
+            create_convert(info,loaddir,odir,cvfiles,NowTarget.Name)
+        } else {
+            fmt.Println("There are no files to convert.")
         }
     } else {
         //
@@ -319,6 +381,7 @@ func main() {
         for i,bs := range command_list {
             t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
             fmt.Println(t)
+            //fmt.Println(bs.cmd + ":"+ bs.args)
             arg_list := strings.Split(bs.args," ")
             c,_ := exec.Command(bs.cmd,arg_list[0:]...).CombinedOutput()
             msg := *(*string)(unsafe.Pointer(&c))

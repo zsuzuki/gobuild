@@ -1,0 +1,21 @@
+#
+#
+#
+
+variable:
+- name: converter
+  value: go
+
+convert_option:
+- list:
+  - build
+
+convert_list:
+- list:
+  - cbuild.go
+
+target:
+  name: cbuild
+  type: convert
+
+#
