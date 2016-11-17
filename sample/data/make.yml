@@ -1,0 +1,13 @@
+#
+#
+#
+
+source:
+- list:
+  - data.cpp
+
+target:
+  name: data
+  type: library
+
+# end

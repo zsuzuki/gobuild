@@ -1,0 +1,48 @@
+#
+#
+#
+
+variable:
+- name: compiler
+  value: clang++
+- name: archiver
+  value: ar
+- name: linker
+  value: clang++
+
+include:
+- list:
+  - ./include
+  - ./data
+
+option:
+- list:
+  - c
+  - std=c++14
+  debug:
+  - O0
+  release:
+  - O3
+
+archive_option:
+- list:
+  - rc
+
+library:
+- list:
+  - stdc
+
+source:
+- list:
+  - test.cpp
+
+target:
+  name: test
+#  type: library
+  type: execute
+
+subdir:
+- list:
+  - data
+
+# end
