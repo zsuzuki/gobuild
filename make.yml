@@ -15,7 +15,7 @@ convert_list:
   - cbuild.go
 
 target:
-  name: cbuild
+- name: cbuild
   type: convert
 
 #

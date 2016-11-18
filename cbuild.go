@@ -268,6 +268,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
     info.select_target = ""
 
+    opt_pre := info.variables["option_prefix"]
     //
     // get rules
     //
@@ -282,32 +283,16 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             result.success = false
             return result,err
         }
-        if target_type == "WIN32" {
-            info.defines += " /I:" + abs
-        } else {
-            info.defines += " -I" + abs
-        }
+        info.includes += " " + opt_pre + "I" + abs
     }
     for _,d := range getList(d.Define,info.target) {
-        if target_type == "WIN32" {
-            info.defines += " /D:" + d
-        } else {
-            info.defines += " -D" + d
-        }
+        info.defines += " " + opt_pre + "D" + d
     }
     for _,o := range getList(d.Option,info.target) {
-        if target_type == "WIN32" {
-            info.options += " /" + o
-        } else {
-            info.options += " -" + o
-        }
+        info.options += " " + opt_pre + o
     }
     for _,a := range getList(d.Archive_Option,info.target) {
-        if target_type == "WIN32" {
-            info.archive_options += "/" + a + " "
-        } else {
-            info.archive_options += "-" + a + " "
-        }
+        info.archive_options += " " + opt_pre + a + " "
     }
     for _,c := range getList(d.Convert_Option,info.target) {
         info.convert_options +=  c + " "
@@ -396,7 +381,7 @@ func main() {
     }
 
     build_info := BuildInfo{
-        variables : map[string] string{},
+        variables : map[string] string{"option_prefix":"-"},
         includes : "",
         defines : "",
         select_target : target_name,
@@ -418,7 +403,7 @@ func main() {
         for i,bs := range command_list {
             t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
             fmt.Println(t)
-            //fmt.Println(bs.cmd + ":"+ bs.args)
+            fmt.Println(bs.cmd + ":"+ bs.args)
             arg_list := strings.Split(bs.args," ")
             c,_ := exec.Command(bs.cmd,arg_list[0:]...).CombinedOutput()
             msg := *(*string)(unsafe.Pointer(&c))
