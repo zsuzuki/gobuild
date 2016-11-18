@@ -3,17 +3,33 @@
 #
 
 variable:
+# default(debug)
 - name: compiler
-  value: clang++
+  value: echo
 - name: archiver
-  value: ar
+  value: echo
 - name: linker
-  value: clang++
+  value: echo
+
+# windows clang
+- name: compiler
+  value: c:/Program Files/LLVM/bin/clang++.exe
+  type: winclang
+- name: archiver
+  value: c:/Program Files/LLVM/bin/llvm-ar.exe
+  type: winclang
+- name: linker
+  value: c:/Program Files/LLVM/bin/clang++.exe
 
 include:
 - list:
   - ./include
   - ./data
+- type: winclang
+  list:
+  - c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include
+  - C:/Program Files (x86)/Windows Kits/10/Include/10.0.10240.0/ucrt
+  - C:/Program Files/Microsoft SDKs/Windows/v6.0A/Include
 
 option:
 - list:
@@ -28,9 +44,15 @@ archive_option:
 - list:
   - rc
 
-library:
-- list:
-  - stdc
+link_option:
+- type: winclang
+  list:
+  - v
+  - static
+  - LC:/Program Files/Microsoft SDKs/Windows/v6.0A/Lib
+  - LC:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64
+  - LC:/Program Files (x86)/Windows Kits/10/Lib/10.0.10240.0/ucrt/x64
+  - lstdc++
 
 source:
 - target: test

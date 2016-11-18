@@ -11,7 +11,6 @@ import (
     "path/filepath"
     "os/exec"
     "os"
-    "strings"
     "unsafe"
 )
 
@@ -49,6 +48,7 @@ type Data struct {
     Option []StringList `yaml:",flow"`
     Archive_Option []StringList `yaml:",flow"`
     Convert_Option []StringList `yaml:",flow"`
+    Link_Option []StringList `yaml:",flow"`
     Prebuild []Build `yaml:",flow"`
     Postbuild []Build `yaml:",flow"`
     Source []StringList `yaml:",flow"`
@@ -74,7 +74,7 @@ func (m MyError) Error() string {
 //
 type BuildCommand struct {
     cmd string
-    args string
+    args []string
     title string
 }
 
@@ -87,11 +87,12 @@ type BuildResult struct {
 //
 type BuildInfo struct {
     variables map[string] string
-    includes string
-    defines string
-    options string
-    archive_options string
-    convert_options string
+    includes []string
+    defines []string
+    options []string
+    archive_options []string
+    convert_options []string
+    link_options []string
     select_target string
     target string
     subdir []string
@@ -146,6 +147,7 @@ func getList(block []StringList,target_name string) []string {
 // archive objects
 //
 func create_archive(info BuildInfo,odir string,create_list []string,target_name string) string {
+
     arname := odir
     if target_type == "WIN32" {
         arname += target_name + ".lib"
@@ -154,16 +156,16 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
     }
     arname = filepath.ToSlash(filepath.Clean(arname))
 
+    alist := []string{arname}
     archiver := info.variables["archiver"]
-    alist := ""
     for _,l := range create_list {
-        alist += " " + l
+        alist = append(alist,l)
     }
 
     t := fmt.Sprintf("Library: %s",arname)
     cmd := BuildCommand{
         cmd : archiver,
-        args : info.archive_options+arname+alist,
+        args : append(info.archive_options,alist...),
         title : t }
     command_list = append(command_list,cmd)
 
@@ -184,17 +186,17 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
 
     linker := info.variables["linker"]
 
-    create_list = append(info.create_list,create_list...)
+    create_list = append(info.link_options,append(info.create_list,create_list...)...)
 
-    flist := ""
+    flist := []string{trname}
     for _,l := range create_list {
-        flist += " " + l
+        flist = append(flist,l)
     }
 
     t := fmt.Sprintf("Linking: %s",trname)
     cmd := BuildCommand{
         cmd : linker,
-        args : "-o " + trname + flist,
+        args : append([]string{"-o"},flist...),
         title : t }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
@@ -206,17 +208,17 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
 func create_convert(info BuildInfo,loaddir string,odir string,create_list []string,target_name string) {
     cvname := odir + target_name
     cvname = filepath.ToSlash(filepath.Clean(cvname))
-    clist := ""
     converter := info.variables["converter"]
 
+    clist := []string{"-o ",cvname}
     for _,f := range create_list {
-        clist += " " + filepath.ToSlash(filepath.Clean(loaddir+f))
+        clist = append(clist,filepath.ToSlash(filepath.Clean(loaddir+f)))
     }
 
     t := fmt.Sprintf("Convert: %s",cvname)
     cmd := BuildCommand{
         cmd : converter,
-        args : info.convert_options+"-o "+cvname+clist,
+        args : append(info.convert_options,clist...),
         title : t }
     command_list = append(command_list,cmd)
 }
@@ -283,19 +285,22 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             result.success = false
             return result,err
         }
-        info.includes += opt_pre + "I" + abs + " "
+        info.includes = append(info.includes,opt_pre + "I" + abs)
     }
     for _,d := range getList(d.Define,info.target) {
-        info.defines += opt_pre + "D" + d + " "
+        info.defines = append(info.defines,opt_pre + "D" + d)
     }
     for _,o := range getList(d.Option,info.target) {
-        info.options += opt_pre + o + " "
+        info.options = append(info.options,opt_pre + o)
     }
     for _,a := range getList(d.Archive_Option,info.target) {
-        info.archive_options += opt_pre + a + " "
+        info.archive_options = append(info.archive_options,a)
     }
     for _,c := range getList(d.Convert_Option,info.target) {
-        info.convert_options +=  c + " "
+        info.convert_options = append(info.convert_options,c)
+    }
+    for _,l := range getList(d.Link_Option,info.target) {
+        info.link_options = append(info.link_options,opt_pre+l)
     }
 
     files := getList(d.Source,info.target)
@@ -314,7 +319,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     compiler := info.variables["compiler"]
 
-    arg1 := info.includes + info.defines + info.options
+    arg1 := append(append(info.includes,info.defines...),info.options...)
     odir := outputdir + "/" + loaddir
     need_dir_list = append(need_dir_list,filepath.Clean(odir))
 
@@ -327,7 +332,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         t := fmt.Sprintf("Compile: %s",sname)
         cmd := BuildCommand{
             cmd : compiler,
-            args : arg1+"-o "+oname+" "+sname,
+            args : append(arg1,"-o",oname,sname),
             title : t }
         command_list = append(command_list,cmd)
     }
@@ -383,8 +388,13 @@ func main() {
 
     build_info := BuildInfo{
         variables : map[string] string{"option_prefix":"-"},
-        includes : "",
-        defines : "",
+        includes : []string{},
+        defines : []string{},
+        options : []string{},
+        archive_options : []string{},
+        convert_options :[]string{},
+        link_options :[]string{},
+        create_list :[]string{},
         select_target : target_name,
         target: target_name }
     var r,err = build(build_info,"")
@@ -404,9 +414,7 @@ func main() {
         for i,bs := range command_list {
             t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
             fmt.Println(t)
-            //fmt.Println(bs.cmd + ":"+ bs.args)
-            arg_list := strings.Split(bs.args," ")
-            c,_ := exec.Command(bs.cmd,arg_list[0:]...).CombinedOutput()
+            c,_ := exec.Command(bs.cmd,bs.args...).CombinedOutput()
             msg := *(*string)(unsafe.Pointer(&c))
             if msg != "" {
                 fmt.Println(msg)
