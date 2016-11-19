@@ -55,6 +55,11 @@ option:
   release:
   - O3
 
+define:
+- target: test3
+  list:
+  - TEST3
+
 archive_option:
 - list:
   - rc
@@ -77,11 +82,16 @@ source:
 - target: test2
   list:
   - test2.cpp
+- target: test3
+  list:
+  - test2.cpp
 
 target:
 - name: test
   type: execute
 - name: test2
+  type: execute
+- name: test3
   type: execute
 
 subdir:

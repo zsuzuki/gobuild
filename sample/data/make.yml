@@ -13,5 +13,8 @@ source:
 target:
 - name: data
   type: library
+- name: data_t
+  type: library
+  by_target: test3
 
 # end

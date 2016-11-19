@@ -20,6 +20,7 @@ import (
 type Target struct {
     Name string
     Type string
+    By_Target string
 }
 type StringList struct {
     Type string
@@ -249,19 +250,40 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     // select target
     //
     var NowTarget Target
+    target_map := map[string] Target{}
+    bytarget_map := map[string] Target{}
     for _,t := range d.Target {
-        if info.select_target == "" || t.Name == info.select_target {
+        if t.By_Target != "" {
+            bytarget_map[t.By_Target] = t;
+        }
+        target_map[t.Name] = t;
+    }
+    if info.select_target != "" {
+        t, ok := target_map[info.select_target]
+        if ok == true {
             NowTarget = t
-            if info.target == "" {
-                info.target = t.Name
+        }
+    } else {
+        if info.target != "" {
+            t, ok := bytarget_map[info.target]
+            if ok == false {
+                t, ok = target_map[info.target]
             }
-            break
+            if ok == true {
+                NowTarget = t
+            }
+        }
+        if NowTarget.Name == "" && len(d.Target) > 0 {
+            NowTarget = d.Target[0]
         }
     }
     if NowTarget.Name == "" {
         e := MyError{ str : "No Target" }
         result.success = false
         return result,e
+    }
+    if info.target == "" {
+        info.target = NowTarget.Name
     }
     info.select_target = ""
 
@@ -394,6 +416,11 @@ func main() {
         outputdir += "Release"
     } else {
         outputdir += "Debug"
+    }
+
+    ra := flag.Args()
+    if len(ra) > 0 && target_name == "" {
+        target_name = ra[0]
     }
 
     need_dir_list = map[string] int{}
