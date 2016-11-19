@@ -273,6 +273,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     var NowTarget Target
     target_map := map[string] Target{}
     bytarget_map := map[string] Target{}
+    objs_suffix := ""
     for _,t := range d.Target {
         if t.By_Target != "" {
             bytarget_map[t.By_Target] = t
@@ -283,11 +284,14 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         t, ok := target_map[info.select_target]
         if ok == true {
             NowTarget = t
+            objs_suffix = "_"+info.select_target
         }
     } else {
         if info.target != "" {
             t, ok := bytarget_map[info.target]
-            if ok == false {
+            if ok == true {
+                objs_suffix = "_"+info.target
+            } else {
                 t, ok = target_map[info.target]
             }
             if ok == true {
@@ -338,7 +342,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         info.archive_options = append_option(info.archive_options,a,"")
     }
     for _,c := range getList(d.Convert_Option,info.target) {
-        info.convert_options = append_option(info.convert_options,c,opt_pre)
+        info.convert_options = append_option(info.convert_options,c,"")
     }
     for _,l := range getList(d.Link_Option,info.target) {
         info.link_options = append_option(info.link_options,l,opt_pre)
@@ -361,7 +365,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     compiler := info.variables["compiler"]
 
     odir := outputdir + "/" + loaddir
-    objdir := outputdir + "/" + loaddir + ".objs/"
+    objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
     need_dir_list[filepath.Clean(objdir)] = 1
     create_list := []string{}
 
@@ -456,6 +460,9 @@ func output_rules(file *os.File) {
     file.WriteString("rule link\n")
     file.WriteString("  command = $link $options -o $out $in\n")
     file.WriteString("  description = Link: $desc\n\n")
+    file.WriteString("rule convert\n")
+    file.WriteString("  command = $convert $options -o $out $in\n")
+    file.WriteString("  description = Convert: $desc\n\n")
 }
 
 
