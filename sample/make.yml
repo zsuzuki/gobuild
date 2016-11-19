@@ -20,6 +20,7 @@ variable:
   type: winclang
 - name: linker
   value: c:/Program Files/LLVM/bin/clang++.exe
+  type: winclang
 
 include:
 - list:

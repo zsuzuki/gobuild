@@ -2,6 +2,10 @@
 #
 #
 
+include:
+- list:
+  - .
+
 source:
 - list:
   - data.cpp

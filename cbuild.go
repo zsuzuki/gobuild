@@ -210,7 +210,7 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
     cvname = filepath.ToSlash(filepath.Clean(cvname))
     converter := info.variables["converter"]
 
-    clist := []string{"-o ",cvname}
+    clist := []string{"-o",cvname}
     for _,f := range create_list {
         clist = append(clist,filepath.ToSlash(filepath.Clean(loaddir+f)))
     }
@@ -280,6 +280,9 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         }
     }
     for _,i := range getList(d.Include,info.target) {
+        if filepath.IsAbs(i) == false {
+            i = loaddir + i
+        }
         abs, err := filepath.Abs(i)
         if err != nil {
             result.success = false
