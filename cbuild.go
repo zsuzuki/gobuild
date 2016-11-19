@@ -12,6 +12,7 @@ import (
     "os/exec"
     "os"
     "unsafe"
+    "strings"
 )
 
 //
@@ -219,6 +220,18 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
     command_list = append(command_list,cmd)
 }
 
+//
+// option
+//
+func append_option(lists []string,opt string,opt_pre string) []string {
+    sl := strings.Split(opt," ")
+    sl[0] = opt_pre+sl[0]
+    for _,so := range sl {
+        lists = append(lists,so)
+    }
+    return lists
+}
+
 
 //
 // build main
@@ -311,16 +324,16 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         info.defines = append(info.defines,opt_pre + "D" + d)
     }
     for _,o := range getList(d.Option,info.target) {
-        info.options = append(info.options,opt_pre + o)
+        info.options = append_option(info.options,o,opt_pre)
     }
     for _,a := range getList(d.Archive_Option,info.target) {
-        info.archive_options = append(info.archive_options,a)
+        info.archive_options = append_option(info.archive_options,a,opt_pre)
     }
     for _,c := range getList(d.Convert_Option,info.target) {
-        info.convert_options = append(info.convert_options,c)
+        info.convert_options = append_option(info.convert_options,c,opt_pre)
     }
     for _,l := range getList(d.Link_Option,info.target) {
-        info.link_options = append(info.link_options,opt_pre+l)
+        info.link_options = append_option(info.link_options,l,opt_pre)
     }
 
     files := getList(d.Source,info.target)
