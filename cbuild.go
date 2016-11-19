@@ -115,8 +115,8 @@ var (
     target_type string
     target_name string
     outputdir string
+    outputdir_set bool
 
-    need_dir_list map[string] int
     command_list []BuildCommand
 )
 
@@ -289,13 +289,12 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     } else {
         if info.target != "" {
             t, ok := bytarget_map[info.target]
-            if ok == true {
-                objs_suffix = "_"+info.target
-            } else {
+            if ok == false {
                 t, ok = target_map[info.target]
             }
             if ok == true {
                 NowTarget = t
+                objs_suffix = "_"+info.target
             }
         }
         if NowTarget.Name == "" && len(d.Target) > 0 {
@@ -321,6 +320,20 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             info.variables[v.Name] = v.Value
         }
     }
+    if outputdir_set == false {
+        def_type, dok := info.variables["default_type"]
+        if dok == true {
+            target_type = def_type
+        }
+        outputdir += "/" + target_type + "/"
+        if isRelease {
+            outputdir += "Release"
+        } else {
+            outputdir += "Debug"
+        }
+        outputdir_set = true
+    }
+
     for _,i := range getList(d.Include,info.target) {
         if filepath.IsAbs(i) == false {
             i = loaddir + i
@@ -366,7 +379,6 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     odir := outputdir + "/" + loaddir
     objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
-    need_dir_list[filepath.Clean(objdir)] = 1
     create_list := []string{}
 
     if len(files) > 0 {
@@ -378,10 +390,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             oname := filepath.ToSlash(filepath.Clean(objdir+f+".o"))
             dname := filepath.ToSlash(filepath.Clean(objdir+f+".d"))
             create_list = append(create_list,oname)
-            dir,_ := filepath.Split(f)
-            if dir != "" {
-                need_dir_list[filepath.Clean(objdir+"/"+dir)] = 1
-            }
+
             carg := arg1
             for _,ca := range info.options {
                 if ca == "$out" {
@@ -415,20 +424,20 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             result.create_list = append(info.create_list,arname)
             //fmt.Println(info.archive_options+arname+alist)
         } else {
-            fmt.Println("There are no files to build.")
+            fmt.Println("There are no files to build.",loaddir)
         }
     } else if NowTarget.Type == "execute" {
         // link program
         if len(create_list) > 0 || len(info.create_list) > 0 {
             create_link(info,odir,append(create_list,info.create_list...),NowTarget.Name)
         } else {
-            fmt.Println("There are no files to build.")
+            fmt.Println("There are no files to build.",loaddir)
         }
     } else if NowTarget.Type == "convert" {
         if len(cvfiles) > 0 {
             create_convert(info,loaddir,odir,cvfiles,NowTarget.Name)
         } else {
-            fmt.Println("There are no files to convert.")
+            fmt.Println("There are no files to convert.",loaddir)
         }
     } else if NowTarget.Type == "fallthrough" {
         result.create_list = append(info.create_list,create_list...)
@@ -445,10 +454,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 //
 //
 func output_rules(file *os.File) {
-    file.WriteString("builddir = .\n")
-    file.WriteString("compiler = g++\n")
-    file.WriteString("ar = ar\n")
-    file.WriteString("cflags = -Wall\n\n")
+    file.WriteString("builddir = .\n\n")
     file.WriteString("rule compile\n")
     file.WriteString("  command = $compile $options $in -o $out\n")
     file.WriteString("  description = Compile: $desc\n")
@@ -478,20 +484,16 @@ func main() {
     flag.StringVar(&outputdir,"o","build","build directory")
     flag.Parse()
 
-    outputdir += "/" + target_type + "/"
     if isRelease {
         isDebug = false
-        outputdir += "Release"
-    } else {
-        outputdir += "Debug"
     }
+    outputdir_set = false
 
     ra := flag.Args()
     if len(ra) > 0 && target_name == "" {
         target_name = ra[0]
     }
 
-    need_dir_list = map[string] int{}
     command_list = []BuildCommand{}
 
     build_info := BuildInfo{
