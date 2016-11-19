@@ -47,7 +47,9 @@ option:
 - list:
   - c
   - g
+  - Wall
   - std=c++14
+  - Werror
   debug:
   - O0
   release:
@@ -71,6 +73,7 @@ source:
 - target: test
   list:
   - test.cpp
+  - sub/test_sub.cpp
 - target: test2
   list:
   - test2.cpp

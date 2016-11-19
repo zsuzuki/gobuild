@@ -109,7 +109,7 @@ var (
     target_name string
     outputdir string
 
-    need_dir_list []string
+    need_dir_list map[string] int
     command_list []BuildCommand
 )
 
@@ -181,7 +181,7 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
         trname += target_name
     }
     trname = filepath.ToSlash(filepath.Clean(trname))
- 
+
     linker := info.variables["linker"]
 
     flist := []string{trname}
@@ -283,7 +283,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             result.success = false
             return result,err
         }
-        info.includes = append(info.includes,opt_pre + "I" + abs)
+        info.includes = append(info.includes,opt_pre + "I" + filepath.ToSlash(abs))
     }
     for _,d := range getList(d.Define,info.target) {
         info.defines = append(info.defines,opt_pre + "D" + d)
@@ -317,23 +317,33 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     compiler := info.variables["compiler"]
 
-    arg1 := append(append(info.includes,info.defines...),info.options...)
     odir := outputdir + "/" + loaddir
     objdir := outputdir + "/" + loaddir + ".objs/"
-    need_dir_list = append(need_dir_list,filepath.Clean(objdir))
-
+    need_dir_list[filepath.Clean(objdir)] = 1
     create_list := []string{}
-    for _,f := range files {
-        sname := filepath.ToSlash(filepath.Clean(loaddir+f))
-        oname := filepath.ToSlash(filepath.Clean(objdir+f+".o"))
-        create_list = append(create_list,oname)
 
-        t := fmt.Sprintf("Compile: %s",sname)
-        cmd := BuildCommand{
-            cmd : compiler,
-            args : append(arg1,"-o",oname,sname),
-            title : t }
-        command_list = append(command_list,cmd)
+    if len(files) > 0 {
+        arg1 := append(append(info.includes,info.defines...),info.options...)
+
+        my_list := make([]BuildCommand,len(files))
+        for i,f := range files {
+            sname := filepath.ToSlash(filepath.Clean(loaddir+f))
+            oname := filepath.ToSlash(filepath.Clean(objdir+f+".o"))
+            create_list = append(create_list,oname)
+            dir,_ := filepath.Split(f)
+            if dir != "" {
+                need_dir_list[filepath.Clean(objdir+"/"+dir)] = 1
+            }
+
+            t := fmt.Sprintf("Compile: %s",sname)
+            args := []string {"-o",oname,sname}
+            cmd := BuildCommand{
+                cmd : compiler,
+                args : append(args,arg1...),
+                title : t }
+            my_list[i] = cmd
+        }
+        command_list = append(command_list,my_list...)
     }
 
     if NowTarget.Type == "library" {
@@ -358,6 +368,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         } else {
             fmt.Println("There are no files to convert.")
         }
+    } else if NowTarget.Type == "fallthrough" {
     } else {
         //
         // othre...
@@ -385,6 +396,9 @@ func main() {
         outputdir += "Debug"
     }
 
+    need_dir_list = map[string] int{}
+    command_list = []BuildCommand{}
+
     build_info := BuildInfo{
         variables : map[string] string{"option_prefix":"-"},
         includes : []string{},
@@ -403,7 +417,7 @@ func main() {
     }
 
     // setup directories
-    for _,nd := range need_dir_list {
+    for nd,_ := range need_dir_list {
         os.MkdirAll(nd,os.ModePerm)
     }
 
