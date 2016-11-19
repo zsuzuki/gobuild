@@ -5,11 +5,11 @@
 variable:
 # default(debug)
 - name: compiler
-  value: echo
+  value: clang++
 - name: archiver
-  value: echo
+  value: ar
 - name: linker
-  value: echo
+  value: clang++
 
 # windows clang
 - name: compiler
@@ -21,17 +21,6 @@ variable:
 - name: linker
   value: c:/Program Files/LLVM/bin/clang++.exe
   type: winclang
-
-# mac
-- name: compiler
-  value: clang++
-  type: mac
-- name: archiver
-  value: ar
-  type: mac
-- name: linker
-  value: clang++
-  type: mac
 
 include:
 - list:
@@ -51,7 +40,8 @@ option:
   - std=c++14
   - Werror
   - MMD
-  - MF out.d
+  - MT $out
+  - MF $dep
   debug:
   - O0
   release:

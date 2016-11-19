@@ -9,10 +9,10 @@ import (
     "gopkg.in/yaml.v2"
     "io/ioutil"
     "path/filepath"
-    "os/exec"
     "os"
-    "unsafe"
     "strings"
+    //"os/exec"
+    //"unsafe"
 )
 
 //
@@ -76,7 +76,12 @@ func (m MyError) Error() string {
 //
 type BuildCommand struct {
     cmd string
+    cmdtype string
+    cmdalias string
     args []string
+    infiles []string
+    outfile string
+    depfile string
     title string
 }
 
@@ -158,14 +163,15 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
     }
     arname = filepath.ToSlash(filepath.Clean(arname))
 
-    alist := []string{arname}
     archiver := info.variables["archiver"]
-    alist = append(alist,create_list...)
 
     t := fmt.Sprintf("Library: %s",arname)
     cmd := BuildCommand{
         cmd : archiver,
-        args : append(info.archive_options,alist...),
+        cmdtype : "ar",
+        args : info.archive_options,
+        infiles : create_list,
+        outfile : arname,
         title : t }
     command_list = append(command_list,cmd)
 
@@ -186,14 +192,13 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
 
     linker := info.variables["linker"]
 
-    flist := []string{trname}
-    flist = append(flist,info.link_options...)
-    flist = append(flist,create_list...)
-
     t := fmt.Sprintf("Linking: %s",trname)
     cmd := BuildCommand{
         cmd : linker,
-        args : append([]string{"-o"},flist...),
+        cmdtype : "link",
+        args : info.link_options,
+        infiles : create_list,
+        outfile : trname,
         title : t }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
@@ -207,7 +212,7 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
     cvname = filepath.ToSlash(filepath.Clean(cvname))
     converter := info.variables["converter"]
 
-    clist := []string{"-o",cvname}
+    clist := []string{}
     for _,f := range create_list {
         clist = append(clist,filepath.ToSlash(filepath.Clean(loaddir+f)))
     }
@@ -215,7 +220,10 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
     t := fmt.Sprintf("Convert: %s",cvname)
     cmd := BuildCommand{
         cmd : converter,
-        args : append(info.convert_options,clist...),
+        cmdtype : "convert",
+        args : info.convert_options,
+        infiles : clist,
+        outfile : cvname,
         title : t }
     command_list = append(command_list,cmd)
 }
@@ -267,9 +275,9 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     bytarget_map := map[string] Target{}
     for _,t := range d.Target {
         if t.By_Target != "" {
-            bytarget_map[t.By_Target] = t;
+            bytarget_map[t.By_Target] = t
         }
-        target_map[t.Name] = t;
+        target_map[t.Name] = t
     }
     if info.select_target != "" {
         t, ok := target_map[info.select_target]
@@ -327,7 +335,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         info.options = append_option(info.options,o,opt_pre)
     }
     for _,a := range getList(d.Archive_Option,info.target) {
-        info.archive_options = append_option(info.archive_options,a,opt_pre)
+        info.archive_options = append_option(info.archive_options,a,"")
     }
     for _,c := range getList(d.Convert_Option,info.target) {
         info.convert_options = append_option(info.convert_options,c,opt_pre)
@@ -358,23 +366,38 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     create_list := []string{}
 
     if len(files) > 0 {
-        arg1 := append(append(info.includes,info.defines...),info.options...)
+        arg1 := append(info.includes,info.defines...)
 
         my_list := make([]BuildCommand,len(files))
         for i,f := range files {
             sname := filepath.ToSlash(filepath.Clean(loaddir+f))
             oname := filepath.ToSlash(filepath.Clean(objdir+f+".o"))
+            dname := filepath.ToSlash(filepath.Clean(objdir+f+".d"))
             create_list = append(create_list,oname)
             dir,_ := filepath.Split(f)
             if dir != "" {
                 need_dir_list[filepath.Clean(objdir+"/"+dir)] = 1
             }
+            carg := arg1
+            for _,ca := range info.options {
+                if ca == "$out" {
+                    ca = oname
+                } else if ca == "$dep" {
+                    ca = dname
+                } else if ca == "$in" {
+                    ca = sname
+                }
+                carg = append(carg,ca)
+            }
 
             t := fmt.Sprintf("Compile: %s",sname)
-            args := []string {"-o",oname,sname}
             cmd := BuildCommand{
                 cmd : compiler,
-                args : append(args,arg1...),
+                cmdtype : "compile",
+                args : carg,
+                infiles : []string{ sname },
+                outfile : oname,
+                depfile : dname,
                 title : t }
             my_list[i] = cmd
         }
@@ -404,16 +427,41 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             fmt.Println("There are no files to convert.")
         }
     } else if NowTarget.Type == "fallthrough" {
+        result.create_list = append(info.create_list,create_list...)
     } else {
         //
-        // othre...
+        // other...
         //
-        result.create_list = append(info.create_list,create_list...)
     }
     result.success = true
     return result,nil
 }
 
+//
+//
+//
+func output_rules(file *os.File) {
+    file.WriteString("builddir = .\n")
+    file.WriteString("compiler = g++\n")
+    file.WriteString("ar = ar\n")
+    file.WriteString("cflags = -Wall\n\n")
+    file.WriteString("rule compile\n")
+    file.WriteString("  command = $compile $options $in -o $out\n")
+    file.WriteString("  description = Compile: $desc\n")
+    file.WriteString("  depfile = $depf\n")
+    file.WriteString("  deps = gcc\n\n")
+    file.WriteString("rule ar\n")
+    file.WriteString("  command = $ar $options $out $in\n")
+    file.WriteString("  description = Archive: $desc\n\n")
+    file.WriteString("rule link\n")
+    file.WriteString("  command = $link $options -o $out $in\n")
+    file.WriteString("  description = Link: $desc\n\n")
+}
+
+
+//
+// application interface
+//
 func main() {
 
     flag.BoolVar(&isRelease,"release",false,"release build")
@@ -456,23 +504,38 @@ func main() {
         os.Exit(1)
     }
 
-    // setup directories
-    for nd,_ := range need_dir_list {
-        os.MkdirAll(nd,os.ModePerm)
+    file,err := os.Create("build.ninja")
+    if err != nil {
+        fmt.Println("Error:",err.Error())
+        os.Exit(1)
     }
 
     // execute build
+    output_rules(file)
+
     nlen := len(command_list)
     if nlen > 0 {
-        for i,bs := range command_list {
-            t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
-            fmt.Println(t)
-            //fmt.Println(bs.args)
-            c,_ := exec.Command(bs.cmd,bs.args...).CombinedOutput()
-            msg := *(*string)(unsafe.Pointer(&c))
-            if msg != "" {
-                fmt.Println(msg)
+        for _,bs := range command_list {
+            //t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
+            file.WriteString("build "+bs.outfile+": "+bs.cmdtype)
+            for _,f := range bs.infiles {
+                file.WriteString(" $\n  "+f)
             }
+            file.WriteString("\n  "+bs.cmdtype+" = "+bs.cmd+"\n")
+            if bs.depfile != "" {
+                file.WriteString("  depf = "+bs.depfile+"\n")
+            }
+            if len(bs.args) > 0 {
+                file.WriteString("  options =")
+                for i,o := range bs.args {
+                    if i & 3 == 3 {
+                        file.WriteString(" $\n   ")
+                    }
+                    file.WriteString(" "+o)
+                }
+                file.WriteString("\n")
+            }
+            file.WriteString("  desc = "+bs.outfile+"\n\n")
         }
     }
 }
