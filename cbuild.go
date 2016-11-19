@@ -158,9 +158,7 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
 
     alist := []string{arname}
     archiver := info.variables["archiver"]
-    for _,l := range create_list {
-        alist = append(alist,l)
-    }
+    alist = append(alist,create_list...)
 
     t := fmt.Sprintf("Library: %s",arname)
     cmd := BuildCommand{
@@ -183,15 +181,12 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
         trname += target_name
     }
     trname = filepath.ToSlash(filepath.Clean(trname))
-
+ 
     linker := info.variables["linker"]
 
-    create_list = append(info.link_options,create_list...)
-
     flist := []string{trname}
-    for _,l := range create_list {
-        flist = append(flist,l)
-    }
+    flist = append(flist,info.link_options...)
+    flist = append(flist,create_list...)
 
     t := fmt.Sprintf("Linking: %s",trname)
     cmd := BuildCommand{
@@ -418,6 +413,7 @@ func main() {
         for i,bs := range command_list {
             t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
             fmt.Println(t)
+            //fmt.Println(bs.args)
             c,_ := exec.Command(bs.cmd,bs.args...).CombinedOutput()
             msg := *(*string)(unsafe.Pointer(&c))
             if msg != "" {
