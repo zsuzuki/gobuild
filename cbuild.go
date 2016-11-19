@@ -186,7 +186,7 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
 
     linker := info.variables["linker"]
 
-    create_list = append(info.link_options,append(info.create_list,create_list...)...)
+    create_list = append(info.link_options,create_list...)
 
     flist := []string{trname}
     for _,l := range create_list {
@@ -324,12 +324,13 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     arg1 := append(append(info.includes,info.defines...),info.options...)
     odir := outputdir + "/" + loaddir
-    need_dir_list = append(need_dir_list,filepath.Clean(odir))
+    objdir := outputdir + "/" + loaddir + ".objs/"
+    need_dir_list = append(need_dir_list,filepath.Clean(objdir))
 
     create_list := []string{}
     for _,f := range files {
         sname := filepath.ToSlash(filepath.Clean(loaddir+f))
-        oname := filepath.ToSlash(filepath.Clean(odir+f+".o"))
+        oname := filepath.ToSlash(filepath.Clean(objdir+f+".o"))
         create_list = append(create_list,oname)
 
         t := fmt.Sprintf("Compile: %s",sname)
@@ -351,8 +352,8 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         }
     } else if NowTarget.Type == "execute" {
         // link program
-        if len(create_list) > 0 && len(info.create_list) > 0 {
-            create_link(info,odir,create_list,NowTarget.Name)
+        if len(create_list) > 0 || len(info.create_list) > 0 {
+            create_link(info,odir,append(create_list,info.create_list...),NowTarget.Name)
         } else {
             fmt.Println("There are no files to build.")
         }

@@ -22,6 +22,17 @@ variable:
   value: c:/Program Files/LLVM/bin/clang++.exe
   type: winclang
 
+# mac
+- name: compiler
+  value: clang++
+  type: mac
+- name: archiver
+  value: ar
+  type: mac
+- name: linker
+  value: clang++
+  type: mac
+
 include:
 - list:
   - ./include
@@ -35,6 +46,7 @@ include:
 option:
 - list:
   - c
+  - g
   - std=c++14
   debug:
   - O0
