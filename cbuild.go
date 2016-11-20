@@ -264,7 +264,7 @@ func get_target(info BuildInfo,tlist []Target) (Target,string,bool) {
             }
             // search target
             for _,t := range tlist {
-                if info.select_target == t.Name {
+                if info.target == t.Name {
                     return t,"_"+info.target,true
                 }
             }
