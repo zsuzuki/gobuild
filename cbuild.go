@@ -39,7 +39,9 @@ type Variable struct {
 type Build struct {
     Name string
     Command string
-    Files []string `yaml:",flow"`
+    Target string
+    Type string
+    Source []StringList `yaml:",flow"`
 }
 
 type Data struct {
@@ -82,7 +84,8 @@ type BuildCommand struct {
     infiles []string
     outfile string
     depfile string
-    title string
+    depends []string
+    need_cmd_alias bool
 }
 
 //
@@ -116,6 +119,7 @@ var (
     target_name string
     outputdir string
     outputdir_set bool
+    append_rules map[string] string
 
     command_list []BuildCommand
 )
@@ -165,14 +169,13 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
 
     archiver := info.variables["archiver"]
 
-    t := fmt.Sprintf("Library: %s",arname)
     cmd := BuildCommand{
         cmd : archiver,
         cmdtype : "ar",
         args : info.archive_options,
         infiles : create_list,
         outfile : arname,
-        title : t }
+        need_cmd_alias : true }
     command_list = append(command_list,cmd)
 
     return arname
@@ -192,14 +195,13 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
 
     linker := info.variables["linker"]
 
-    t := fmt.Sprintf("Linking: %s",trname)
     cmd := BuildCommand{
         cmd : linker,
         cmdtype : "link",
         args : info.link_options,
         infiles : create_list,
         outfile : trname,
-        title : t }
+        need_cmd_alias : true }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
 }
@@ -217,14 +219,13 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
         clist = append(clist,filepath.ToSlash(filepath.Clean(loaddir+f)))
     }
 
-    t := fmt.Sprintf("Convert: %s",cvname)
     cmd := BuildCommand{
         cmd : converter,
         cmdtype : "convert",
         args : info.convert_options,
         infiles : clist,
         outfile : cvname,
-        title : t }
+        need_cmd_alias : true }
     command_list = append(command_list,cmd)
 }
 
@@ -239,6 +240,90 @@ func append_option(lists []string,opt string,opt_pre string) []string {
     }
     return lists
 }
+
+//
+// target
+//
+func get_target(info BuildInfo,tlist []Target) (Target,string,bool) {
+    if info.select_target != "" {
+        // search target
+        for _,t := range tlist {
+            if info.select_target == t.Name {
+                return t,"_"+info.select_target,true
+            }
+        }
+
+    } else {
+        if info.target != "" {
+
+            // search by_target
+            for _,t := range tlist {
+                if info.target == t.By_Target {
+                    return t,"_"+info.target,true
+                }
+            }
+            // search target
+            for _,t := range tlist {
+                if info.select_target == t.Name {
+                    return t,"_"+info.target,true
+                }
+            }
+        }
+        if len(tlist) > 0 {
+            return tlist[0],"",true
+        }
+    }
+    return Target{},"",false
+}
+
+//
+// pre build
+//
+func create_prebuild(info BuildInfo,odir string,plist []Build) error {
+    for _,p := range plist {
+        if (p.Target == "" || p.Target == info.target) && (p.Type == "" || p.Type == target_type) {
+            // regist prebuild
+            srlist := getList(p.Source,info.target)
+            if len(srlist) == 0 {
+                e := MyError{ str : "build command: "+p.Name+" is empty source." }
+                return e
+            }
+            ur,ok := info.variables[p.Command]
+            if ok == false {
+                e := MyError{ str : "build command: <"+p.Command+"> is not found.(use by "+p.Name+")"}
+                return e
+            }
+            mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(odir+p.Command)),"/","_",-1)
+            deps := []string{}
+            _,af := append_rules[mycmd];
+            if af == false {
+                if ur[0] == '$' {
+                    url := strings.Split(ur," ")
+                    ucmd := url[0]
+                    ur = filepath.ToSlash(filepath.Clean(odir+ucmd[1:len(ucmd)]))
+                    deps = append(deps,ur)
+                    for i,uu := range url {
+                        if i > 0 {
+                            ur += " "+uu
+                        }
+                    }
+                }
+                append_rules[mycmd] = ur
+            }
+
+            cmd := BuildCommand{
+                cmd : p.Command,
+                cmdtype : mycmd,
+                depends : deps,
+                infiles : srlist,
+                outfile : filepath.ToSlash(filepath.Clean(odir+p.Name)),
+                need_cmd_alias : false }
+            command_list = append(command_list,cmd)
+        }
+    }
+    return nil
+}
+
 
 
 //
@@ -262,7 +347,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     var d Data
     err = yaml.Unmarshal(buf, &d)
     if err != nil {
-        e := MyError { str : my_yaml + ": " + err.Error() }
+        e := MyError{ str : my_yaml + ": " + err.Error() }
         result.success = false
         return result,e
     }
@@ -270,44 +355,15 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     //
     // select target
     //
-    var NowTarget Target
-    target_map := map[string] Target{}
-    bytarget_map := map[string] Target{}
-    objs_suffix := ""
-    for _,t := range d.Target {
-        if t.By_Target != "" {
-            bytarget_map[t.By_Target] = t
-        }
-        target_map[t.Name] = t
-    }
-    if info.select_target != "" {
-        t, ok := target_map[info.select_target]
-        if ok == true {
-            NowTarget = t
-            objs_suffix = "_"+info.select_target
-        }
-    } else {
-        if info.target != "" {
-            t, ok := bytarget_map[info.target]
-            if ok == false {
-                t, ok = target_map[info.target]
-            }
-            if ok == true {
-                NowTarget = t
-                objs_suffix = "_"+info.target
-            }
-        }
-        if NowTarget.Name == "" && len(d.Target) > 0 {
-            NowTarget = d.Target[0]
-        }
-    }
-    if NowTarget.Name == "" {
+    NowTarget,objs_suffix,ok := get_target(info,d.Target)
+    if ok == false {
         e := MyError{ str : "No Target" }
         result.success = false
         return result,e
     }
     if info.target == "" {
         info.target = NowTarget.Name
+        fmt.Println("gobuild: make target: "+info.target)
     }
     info.select_target = ""
 
@@ -381,14 +437,25 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
     create_list := []string{}
 
+    // pre build files
+    err = create_prebuild(info,odir,d.Prebuild)
+    if err != nil {
+        return result,err
+    }
+
     if len(files) > 0 {
         arg1 := append(info.includes,info.defines...)
 
         my_list := make([]BuildCommand,len(files))
         for i,f := range files {
+            of := f
+            if f[0] == '$' {
+                of = f[1:len(f)]
+                f = odir + of
+            }
             sname := filepath.ToSlash(filepath.Clean(loaddir+f))
-            oname := filepath.ToSlash(filepath.Clean(objdir+f+".o"))
-            dname := filepath.ToSlash(filepath.Clean(objdir+f+".d"))
+            oname := filepath.ToSlash(filepath.Clean(objdir+of+".o"))
+            dname := filepath.ToSlash(filepath.Clean(objdir+of+".d"))
             create_list = append(create_list,oname)
 
             carg := arg1
@@ -403,7 +470,6 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
                 carg = append(carg,ca)
             }
 
-            t := fmt.Sprintf("Compile: %s",sname)
             cmd := BuildCommand{
                 cmd : compiler,
                 cmdtype : "compile",
@@ -411,7 +477,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
                 infiles : []string{ sname },
                 outfile : oname,
                 depfile : dname,
-                title : t }
+                need_cmd_alias : true }
             my_list[i] = cmd
         }
         command_list = append(command_list,my_list...)
@@ -469,6 +535,12 @@ func output_rules(file *os.File) {
     file.WriteString("rule convert\n")
     file.WriteString("  command = $convert $options -o $out $in\n")
     file.WriteString("  description = Convert: $desc\n\n")
+
+    for ar,arv := range append_rules {
+        file.WriteString("rule "+ar+"\n")
+        file.WriteString("  command = "+arv+"\n")
+        file.WriteString("  description = "+ar+": $desc\n\n")
+    }
 }
 
 
@@ -494,8 +566,12 @@ func main() {
         target_name = ra[0]
     }
 
+    append_rules = map[string] string{}
     command_list = []BuildCommand{}
 
+    if target_name != "" {
+        fmt.Println("gobuild: make target: "+target_name)
+    }
     build_info := BuildInfo{
         variables : map[string] string{"option_prefix":"-"},
         includes : []string{},
@@ -509,28 +585,35 @@ func main() {
         target: target_name }
     var r,err = build(build_info,"")
     if r.success == false {
-        fmt.Println("Error:",err.Error())
+        fmt.Println("gobuild: error:",err.Error())
         os.Exit(1)
     }
-
-    file,err := os.Create("build.ninja")
-    if err != nil {
-        fmt.Println("Error:",err.Error())
-        os.Exit(1)
-    }
-
-    // execute build
-    output_rules(file)
 
     nlen := len(command_list)
     if nlen > 0 {
+
+        file,err := os.Create("build.ninja")
+        if err != nil {
+            fmt.Println("gobuild: error:",err.Error())
+            os.Exit(1)
+        }
+
+        // execute build
+        output_rules(file)
+
         for _,bs := range command_list {
-            //t := fmt.Sprintf("[%d/%d] %s",i+1,nlen,bs.title)
             file.WriteString("build "+bs.outfile+": "+bs.cmdtype)
             for _,f := range bs.infiles {
                 file.WriteString(" $\n  "+f)
             }
-            file.WriteString("\n  "+bs.cmdtype+" = "+bs.cmd+"\n")
+            for _,dep := range bs.depends {
+                file.WriteString(" $\n  "+dep)
+            }
+            if bs.need_cmd_alias {
+                file.WriteString("\n  "+bs.cmdtype+" = "+bs.cmd+"\n")
+            } else {
+                file.WriteString("\n")
+            }
             if bs.depfile != "" {
                 file.WriteString("  depf = "+bs.depfile+"\n")
             }
@@ -546,6 +629,10 @@ func main() {
             }
             file.WriteString("  desc = "+bs.outfile+"\n\n")
         }
+
+        fmt.Println("gobuild: done.")
+    } else {
+        fmt.Println("gobuild: empty")
     }
 }
 //

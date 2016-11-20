@@ -22,6 +22,12 @@ variable:
   value: c:/Program Files/LLVM/bin/clang++.exe
   type: winclang
 
+- name: txt2c
+  value: $txt2c -o $out $in
+
+- name: txt2c_go
+  value: go build -o $out $in
+
 include:
 - list:
   - ./include
@@ -71,12 +77,25 @@ source:
   list:
   - test.cpp
   - sub/test_sub.cpp
+  - $hello.cpp
 - target: test2
   list:
   - test2.cpp
 - target: test3
   list:
   - test2.cpp
+
+prebuild:
+- name: hello.cpp
+  command: txt2c
+  source:
+  - list:
+    - hello.txt
+- name: txt2c
+  command: txt2c_go
+  source:
+  - list:
+    - txt2c.go
 
 target:
 - name: test

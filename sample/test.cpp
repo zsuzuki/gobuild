@@ -14,6 +14,12 @@ main()
   Data d(a);
   std::cout << d.get() << std::endl;
   put();
+#ifndef TEST3
+  {
+    extern void putHello();
+    putHello();
+  }
+#endif
   return 0;
 }
 //
