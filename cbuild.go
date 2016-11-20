@@ -270,7 +270,12 @@ func get_target(info BuildInfo,tlist []Target) (Target,string,bool) {
             }
         }
         if len(tlist) > 0 {
-            return tlist[0],"",true
+            t := tlist[0]
+            if info.target == "" {
+                return t,"_"+t.Name,true
+            } else {
+                return t,"",true
+            }
         }
     }
     return Target{},"",false
@@ -520,7 +525,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 //
 //
 func output_rules(file *os.File) {
-    file.WriteString("builddir = .\n\n")
+    file.WriteString("builddir = "+outputdir+"\n\n")
     file.WriteString("rule compile\n")
     file.WriteString("  command = $compile $options $in -o $out\n")
     file.WriteString("  description = Compile: $desc\n")
