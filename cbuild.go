@@ -282,9 +282,23 @@ func get_target(info BuildInfo,tlist []Target) (Target,string,bool) {
 }
 
 //
+func replace_path(value string,add_dir string) (string, string) {
+    url := strings.Split(value," ")
+    ucmd := url[0]
+    p := filepath.ToSlash(filepath.Clean(add_dir+ucmd[1:len(ucmd)]))
+    result := p
+    for i,uu := range url {
+        if i > 0 {
+            result += " "+uu
+        }
+    }
+    return result,p
+}
+
+//
 // pre build
 //
-func create_prebuild(info BuildInfo,odir string,plist []Build) error {
+func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) error {
     for _,p := range plist {
         if (p.Target == "" || p.Target == info.target) && (p.Type == "" || p.Type == target_type) {
             // regist prebuild
@@ -292,6 +306,13 @@ func create_prebuild(info BuildInfo,odir string,plist []Build) error {
             if len(srlist) == 0 {
                 e := MyError{ str : "build command: "+p.Name+" is empty source." }
                 return e
+            }
+            for i,src := range srlist {
+                if src[0] == '$' {
+                    srlist[i] = filepath.ToSlash(filepath.Clean(odir+"output/"+src[1:len(src)]))
+                } else {
+                    srlist[i] = filepath.ToSlash(filepath.Clean(loaddir+src))
+                }
             }
             ur,ok := info.variables[p.Command]
             if ok == false {
@@ -303,27 +324,46 @@ func create_prebuild(info BuildInfo,odir string,plist []Build) error {
             _,af := append_rules[mycmd];
             if af == false {
                 if ur[0] == '$' {
-                    url := strings.Split(ur," ")
-                    ucmd := url[0]
-                    ur = filepath.ToSlash(filepath.Clean(odir+ucmd[1:len(ucmd)]))
-                    deps = append(deps,ur)
-                    for i,uu := range url {
-                        if i > 0 {
-                            ur += " "+uu
-                        }
-                    }
+                    r, d := replace_path(ur,odir)
+                    deps = append(deps,d)
+                    ur = r
+                } else if ur[0] == '.' {
+                    r, d := replace_path(ur,loaddir)
+                    deps = append(deps,d)
+                    ur = r
                 }
                 append_rules[mycmd] = ur
             }
 
-            cmd := BuildCommand{
-                cmd : p.Command,
-                cmdtype : mycmd,
-                depends : deps,
-                infiles : srlist,
-                outfile : filepath.ToSlash(filepath.Clean(odir+p.Name)),
-                need_cmd_alias : false }
-            command_list = append(command_list,cmd)
+            if p.Name[0] != '$' {
+                cmd := BuildCommand{
+                    cmd : p.Command,
+                    cmdtype : mycmd,
+                    depends : deps,
+                    infiles : srlist,
+                    outfile : filepath.ToSlash(filepath.Clean(odir+p.Name)),
+                    need_cmd_alias : false }
+                command_list = append(command_list,cmd)
+            } else {
+                ext := filepath.Ext(p.Name)
+                for _,src := range srlist {
+                    dst := filepath.Base(src)
+                    next := filepath.Ext(src)
+                    if next != "" {
+                        dst = dst[0:len(dst)-len(next)]+ext
+                    } else {
+                        dst += ext
+                    }
+                    cmd := BuildCommand{
+                        cmd : p.Command,
+                        cmdtype : mycmd,
+                        depends : deps,
+                        infiles : []string{ src },
+                        outfile : filepath.ToSlash(filepath.Clean(odir+"output/"+dst)),
+                        need_cmd_alias : false }
+                    command_list = append(command_list,cmd)
+                }
+            }
         }
     }
     return nil
@@ -395,8 +435,13 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         outputdir_set = true
     }
 
+    odir := outputdir + "/" + loaddir
+    objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
+
     for _,i := range getList(d.Include,info.target) {
-        if filepath.IsAbs(i) == false {
+        if i == strings.HasPrefix("$output") {
+            i = odir + "output"
+        } else if filepath.IsAbs(i) == false {
             i = loaddir + i
         }
         abs, err := filepath.Abs(i)
@@ -437,13 +482,10 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
 
     compiler := info.variables["compiler"]
-
-    odir := outputdir + "/" + loaddir
-    objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
     create_list := []string{}
 
     // pre build files
-    err = create_prebuild(info,odir,d.Prebuild)
+    err = create_prebuild(info,loaddir,odir,d.Prebuild)
     if err != nil {
         return result,err
     }
