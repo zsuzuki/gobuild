@@ -440,16 +440,11 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     for _,i := range getList(d.Include,info.target) {
         if strings.HasPrefix(i,"$output") {
-            i = odir + "output" + i[7:len(i)]
+            i = filepath.Clean(odir + "output" + i[7:len(i)])
         } else if filepath.IsAbs(i) == false {
-            i = loaddir + i
+            i = filepath.Clean(loaddir + i)
         }
-        abs, err := filepath.Abs(i)
-        if err != nil {
-            result.success = false
-            return result,err
-        }
-        info.includes = append(info.includes,opt_pre + "I" + filepath.ToSlash(abs))
+        info.includes = append(info.includes,opt_pre + "I" + filepath.ToSlash(i))
     }
     for _,d := range getList(d.Define,info.target) {
         info.defines = append(info.defines,opt_pre + "D" + d)
