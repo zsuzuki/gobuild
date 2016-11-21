@@ -106,7 +106,6 @@ type BuildInfo struct {
     select_target string
     target string
     subdir []string
-    create_list []string
 }
 
 //
@@ -122,6 +121,8 @@ var (
     append_rules map[string] string
 
     command_list []BuildCommand
+
+    verboseMode bool
 )
 
 //
@@ -381,6 +382,9 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     } else {
         loaddir += "/"
     }
+    if verboseMode == true {
+        fmt.Println(pathname+": start")
+    }
     my_yaml := loaddir+"make.yml"
     buf, err := ioutil.ReadFile(my_yaml)
     if err != nil {
@@ -467,13 +471,16 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     // sub-directories
     subdirs := getList(d.Subdir,info.target)
+    subdir_create_list := []string{}
     for _,s := range subdirs {
         sd := loaddir+s
         var r,e = build(info,sd)
         if r.success == false {
             return r,e
         }
-        info.create_list = append(info.create_list,r.create_list...)
+        if len(r.create_list) > 0 {
+            subdir_create_list = append(subdir_create_list,r.create_list...)
+        }
     }
 
     compiler := info.variables["compiler"]
@@ -529,15 +536,15 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         // archive
         if len(create_list) > 0 {
             arname := create_archive(info,odir,create_list,NowTarget.Name)
-            result.create_list = append(info.create_list,arname)
+            result.create_list = append(subdir_create_list,arname)
             //fmt.Println(info.archive_options+arname+alist)
         } else {
             fmt.Println("There are no files to build.",loaddir)
         }
     } else if NowTarget.Type == "execute" {
         // link program
-        if len(create_list) > 0 || len(info.create_list) > 0 {
-            create_link(info,odir,append(create_list,info.create_list...),NowTarget.Name)
+        if len(create_list) > 0 || len(subdir_create_list) > 0 {
+            create_link(info,odir,append(create_list,subdir_create_list...),NowTarget.Name)
         } else {
             fmt.Println("There are no files to build.",loaddir)
         }
@@ -548,11 +555,17 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             fmt.Println("There are no files to convert.",loaddir)
         }
     } else if NowTarget.Type == "fallthrough" {
-        result.create_list = append(info.create_list,create_list...)
+        result.create_list = append(subdir_create_list,create_list...)
     } else {
         //
         // other...
         //
+    }
+    if verboseMode == true {
+        fmt.Println(pathname+" create list:", len(result.create_list))
+        for _,rc := range result.create_list {
+            fmt.Println("    ",rc)
+        }
     }
     result.success = true
     return result,nil
@@ -591,6 +604,7 @@ func output_rules(file *os.File) {
 //
 func main() {
 
+    flag.BoolVar(&verboseMode,"v",false,"verbose mode")
     flag.BoolVar(&isRelease,"release",false,"release build")
     flag.BoolVar(&isDebug,"debug",true,"debug build")
     flag.StringVar(&target_type,"type","default","build target type")
@@ -622,7 +636,6 @@ func main() {
         archive_options : []string{},
         convert_options :[]string{},
         link_options :[]string{},
-        create_list :[]string{},
         select_target : target_name,
         target: target_name }
     var r,err = build(build_info,"")
@@ -634,6 +647,9 @@ func main() {
     nlen := len(command_list)
     if nlen > 0 {
 
+        if verboseMode == true {
+            fmt.Println("output build.ninja")
+        }
         file,err := os.Create("build.ninja")
         if err != nil {
             fmt.Println("gobuild: error:",err.Error())
