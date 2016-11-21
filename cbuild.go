@@ -439,8 +439,8 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
 
     for _,i := range getList(d.Include,info.target) {
-        if i == strings.HasPrefix("$output") {
-            i = odir + "output"
+        if strings.HasPrefix(i,"$output") {
+            i = odir + "output" + i[7:len(i)]
         } else if filepath.IsAbs(i) == false {
             i = loaddir + i
         }
