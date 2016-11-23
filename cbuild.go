@@ -84,7 +84,6 @@ type BuildCommand struct {
     infiles []string
     outfile string
     depfile string
-    rsp bool
     depends []string
     need_cmd_alias bool
 }
@@ -106,6 +105,7 @@ type BuildInfo struct {
     link_options []string
     select_target string
     target string
+    outputdir string
     subdir []string
 }
 
@@ -124,6 +124,7 @@ var (
     command_list []BuildCommand
 
     verboseMode bool
+    useResponse bool
 )
 
 //
@@ -159,9 +160,9 @@ func getList(block []StringList,target_name string) []string {
 //
 // archive objects
 //
-func create_archive(info BuildInfo,odir string,create_list []string,target_name string) string {
+func create_archive(info BuildInfo,create_list []string,target_name string) string {
 
-    arname := odir
+    arname := info.outputdir
     if target_type == "WIN32" {
         arname += target_name + ".lib"
     } else {
@@ -177,7 +178,6 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
         args : info.archive_options,
         infiles : create_list,
         outfile : arname,
-        rsp : true,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
 
@@ -187,8 +187,8 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
 //
 // link objects
 //
-func create_link(info BuildInfo,odir string,create_list []string,target_name string) {
-    trname := odir
+func create_link(info BuildInfo,create_list []string,target_name string) {
+    trname := info.outputdir
     if target_type == "WIN32" {
         trname += target_name + ".exe"
     } else {
@@ -204,7 +204,6 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
         args : info.link_options,
         infiles : create_list,
         outfile : trname,
-        rsp : true,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
@@ -213,8 +212,8 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
 //
 // convert objects
 //
-func create_convert(info BuildInfo,loaddir string,odir string,create_list []string,target_name string) {
-    cvname := odir + target_name
+func create_convert(info BuildInfo,loaddir string,create_list []string,target_name string) {
+    cvname := info.outputdir + target_name
     cvname = filepath.ToSlash(filepath.Clean(cvname))
     converter := info.variables["converter"]
 
@@ -229,7 +228,6 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
         args : info.convert_options,
         infiles : clist,
         outfile : cvname,
-        rsp : false,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
 }
@@ -303,7 +301,7 @@ func replace_path(value string,add_dir string) (string, string) {
 //
 // pre build
 //
-func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) error {
+func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
     for _,p := range plist {
         if (p.Target == "" || p.Target == info.target) && (p.Type == "" || p.Type == target_type) {
             // regist prebuild
@@ -314,7 +312,7 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
             }
             for i,src := range srlist {
                 if src[0] == '$' {
-                    srlist[i] = filepath.ToSlash(filepath.Clean(odir+"output/"+src[1:len(src)]))
+                    srlist[i] = filepath.ToSlash(filepath.Clean(info.outputdir+"output/"+src[1:len(src)]))
                 } else {
                     srlist[i] = filepath.ToSlash(filepath.Clean(loaddir+src))
                 }
@@ -324,12 +322,12 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
                 e := MyError{ str : "build command: <"+p.Command+"> is not found.(use by "+p.Name+")"}
                 return e
             }
-            mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(odir+p.Command)),"/","_",-1)
+            mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(info.outputdir+p.Command)),"/","_",-1)
             deps := []string{}
-            _,af := append_rules[mycmd];
+            _,af := append_rules[mycmd]
             if af == false {
                 if ur[0] == '$' {
-                    r, d := replace_path(ur,odir)
+                    r, d := replace_path(ur,info.outputdir)
                     deps = append(deps,d)
                     ur = r
                 } else if ur[0] == '.' {
@@ -346,8 +344,7 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
                     cmdtype : mycmd,
                     depends : deps,
                     infiles : srlist,
-                    outfile : filepath.ToSlash(filepath.Clean(odir+p.Name)),
-                    rsp : false,
+                    outfile : filepath.ToSlash(filepath.Clean(info.outputdir+p.Name)),
                     need_cmd_alias : false }
                 command_list = append(command_list,cmd)
             } else {
@@ -365,8 +362,7 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
                         cmdtype : mycmd,
                         depends : deps,
                         infiles : []string{ src },
-                        outfile : filepath.ToSlash(filepath.Clean(odir+"output/"+dst)),
-                        rsp : false,
+                        outfile : filepath.ToSlash(filepath.Clean(info.outputdir+"output/"+dst)),
                         need_cmd_alias : false }
                     command_list = append(command_list,cmd)
                 }
@@ -374,6 +370,54 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
         }
     }
     return nil
+}
+
+//
+// compile files
+//
+func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (create_list []string) {
+
+    compiler := info.variables["compiler"]
+
+    arg1 := append(info.includes,info.defines...)
+
+    my_list := make([]BuildCommand,len(files))
+    for i,f := range files {
+        of := f
+        if f[0] == '$' {
+            of = f[1:len(f)]
+            f = info.outputdir + of
+        }
+        sname := filepath.ToSlash(filepath.Clean(loaddir+f))
+        oname := filepath.ToSlash(filepath.Clean(objdir+of+".o"))
+        dname := filepath.ToSlash(filepath.Clean(objdir+of+".d"))
+        create_list = append(create_list,oname)
+
+        carg := arg1
+        for _,ca := range info.options {
+            if ca == "$out" {
+                ca = oname
+            } else if ca == "$dep" {
+                ca = dname
+            } else if ca == "$in" {
+                ca = sname
+            }
+            carg = append(carg,ca)
+        }
+
+        cmd := BuildCommand{
+            cmd : compiler,
+            cmdtype : "compile",
+            args : carg,
+            infiles : []string{ sname },
+            outfile : oname,
+            depfile : dname,
+            need_cmd_alias : true }
+        my_list[i] = cmd
+    }
+    command_list = append(command_list,my_list...)
+
+    return create_list
 }
 
 
@@ -428,7 +472,20 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     //
     for _,v := range d.Variable {
         if v.Type == "" || v.Type == target_type {
-            info.variables[v.Name] = v.Value
+            val := v.Value
+            if v.Name == "enable_response" {
+                if val == "true" {
+                    useResponse = true
+                    fmt.Println(useResponse)
+                } else if val == "false" {
+                    useResponse = false
+                    fmt.Println(useResponse)
+                } else {
+                    fmt.Println(" warning: link_response value [",v.Value,"] is unsupport(true/false)")
+                }
+            }
+            info.variables[v.Name] = val
+            //
         }
     }
     if outputdir_set == false {
@@ -445,12 +502,12 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         outputdir_set = true
     }
 
-    odir := outputdir + "/" + loaddir
+    info.outputdir = outputdir + "/" + loaddir
     objdir := outputdir + "/" + loaddir + ".objs"+objs_suffix+"/"
 
     for _,i := range getList(d.Include,info.target) {
         if strings.HasPrefix(i,"$output") {
-            i = filepath.Clean(odir + "output" + i[7:len(i)])
+            i = filepath.Clean(info.outputdir + "output" + i[7:len(i)])
         } else if filepath.IsAbs(i) == false {
             i = filepath.Clean(loaddir + i)
         }
@@ -489,60 +546,22 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         }
     }
 
-    compiler := info.variables["compiler"]
     create_list := []string{}
 
     // pre build files
-    err = create_prebuild(info,loaddir,odir,d.Prebuild)
+    err = create_prebuild(info,loaddir,d.Prebuild)
     if err != nil {
         return result,err
     }
 
     if len(files) > 0 {
-        arg1 := append(info.includes,info.defines...)
-
-        my_list := make([]BuildCommand,len(files))
-        for i,f := range files {
-            of := f
-            if f[0] == '$' {
-                of = f[1:len(f)]
-                f = odir + of
-            }
-            sname := filepath.ToSlash(filepath.Clean(loaddir+f))
-            oname := filepath.ToSlash(filepath.Clean(objdir+of+".o"))
-            dname := filepath.ToSlash(filepath.Clean(objdir+of+".d"))
-            create_list = append(create_list,oname)
-
-            carg := arg1
-            for _,ca := range info.options {
-                if ca == "$out" {
-                    ca = oname
-                } else if ca == "$dep" {
-                    ca = dname
-                } else if ca == "$in" {
-                    ca = sname
-                }
-                carg = append(carg,ca)
-            }
-
-            cmd := BuildCommand{
-                cmd : compiler,
-                cmdtype : "compile",
-                args : carg,
-                infiles : []string{ sname },
-                outfile : oname,
-                depfile : dname,
-                rsp : false,
-                need_cmd_alias : true }
-            my_list[i] = cmd
-        }
-        command_list = append(command_list,my_list...)
+        create_list= append(create_list,compile_files(info,objdir,loaddir,files)...)
     }
 
     if NowTarget.Type == "library" {
         // archive
         if len(create_list) > 0 {
-            arname := create_archive(info,odir,create_list,NowTarget.Name)
+            arname := create_archive(info,create_list,NowTarget.Name)
             result.create_list = append(subdir_create_list,arname)
             //fmt.Println(info.archive_options+arname+alist)
         } else {
@@ -551,13 +570,13 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     } else if NowTarget.Type == "execute" {
         // link program
         if len(create_list) > 0 || len(subdir_create_list) > 0 {
-            create_link(info,odir,append(create_list,subdir_create_list...),NowTarget.Name)
+            create_link(info,append(create_list,subdir_create_list...),NowTarget.Name)
         } else {
             fmt.Println("There are no files to build.",loaddir)
         }
     } else if NowTarget.Type == "convert" {
         if len(cvfiles) > 0 {
-            create_convert(info,loaddir,odir,cvfiles,NowTarget.Name)
+            create_convert(info,loaddir,cvfiles,NowTarget.Name)
         } else {
             fmt.Println("There are no files to convert.",loaddir)
         }
@@ -579,7 +598,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 }
 
 //
-//
+// writing rules
 //
 func output_rules(file *os.File) {
     file.WriteString("builddir = "+outputdir+"\n\n")
@@ -589,25 +608,84 @@ func output_rules(file *os.File) {
     file.WriteString("  depfile = $depf\n")
     file.WriteString("  deps = gcc\n\n")
     file.WriteString("rule ar\n")
-    file.WriteString("  command = $ar $options $out @$out.rsp\n")
-    file.WriteString("  description = Archive: $desc\n")
-    file.WriteString("  rspfile = $out.rsp\n")
-    file.WriteString("  rspfile_content = $in\n\n")
+    if useResponse == true {
+        file.WriteString("  command = $ar $options $out @$out.rsp\n")
+        file.WriteString("  description = Archive: $desc\n")
+        file.WriteString("  rspfile = $out.rsp\n")
+        file.WriteString("  rspfile_content = $in\n\n")
+    } else {
+        file.WriteString("  command = $ar $options $out $in\n")
+        file.WriteString("  description = Archive: $desc\n\n")
+    }
     file.WriteString("rule link\n")
-    file.WriteString("  command = $link $options -o $out $out.rsp\n")
-    file.WriteString("  description = Link: $desc\n")
-    file.WriteString("  rspfile = $out.rsp\n")
-    file.WriteString("  rspfile_content = $in\n\n")
+    if useResponse == true {
+        file.WriteString("  command = $link $options -o $out $out.rsp\n")
+        file.WriteString("  description = Link: $desc\n")
+        file.WriteString("  rspfile = $out.rsp\n")
+        file.WriteString("  rspfile_content = $in\n\n")
+    } else {
+        file.WriteString("  command = $link $options -o $out $in\n")
+        file.WriteString("  description = Link: $desc\n\n")
+    }
     file.WriteString("rule convert\n")
     file.WriteString("  command = $convert $options -o $out $in\n")
     file.WriteString("  description = Convert: $desc\n\n")
 
+    // appended original rules.
     for ar,arv := range append_rules {
         file.WriteString("rule "+ar+"\n")
         file.WriteString("  command = "+arv+"\n")
         file.WriteString("  description = "+ar+": $desc\n\n")
     }
 }
+
+
+//
+// writing ninja
+//
+func outputNinja() {
+    if verboseMode == true {
+        fmt.Println("output build.ninja")
+    }
+    file,err := os.Create("build.ninja")
+    if err != nil {
+        fmt.Println("gobuild: error:",err.Error())
+        os.Exit(1)
+    }
+
+    // execute build
+    output_rules(file)
+
+    for _,bs := range command_list {
+        file.WriteString("build "+bs.outfile+": "+bs.cmdtype)
+        for _,f := range bs.infiles {
+            file.WriteString(" $\n  "+f)
+        }
+        for _,dep := range bs.depends {
+            file.WriteString(" $\n  "+dep)
+        }
+        if bs.need_cmd_alias {
+            file.WriteString("\n  "+bs.cmdtype+" = "+bs.cmd+"\n")
+        } else {
+            file.WriteString("\n")
+        }
+        if bs.depfile != "" {
+            file.WriteString("  depf = "+bs.depfile+"\n")
+        }
+        if len(bs.args) > 0 {
+            file.WriteString("  options =")
+            for i,o := range bs.args {
+                if i & 3 == 3 {
+                    file.WriteString(" $\n   ")
+                }
+                file.WriteString(" "+o)
+            }
+            file.WriteString("\n")
+        }
+        file.WriteString("  desc = "+bs.outfile+"\n\n")
+    }
+}
+
 
 
 //
@@ -627,6 +705,7 @@ func main() {
         isDebug = false
     }
     outputdir_set = false
+    useResponse = false
 
     ra := flag.Args()
     if len(ra) > 0 && target_name == "" {
@@ -658,46 +737,7 @@ func main() {
     nlen := len(command_list)
     if nlen > 0 {
 
-        if verboseMode == true {
-            fmt.Println("output build.ninja")
-        }
-        file,err := os.Create("build.ninja")
-        if err != nil {
-            fmt.Println("gobuild: error:",err.Error())
-            os.Exit(1)
-        }
-
-        // execute build
-        output_rules(file)
-
-        for _,bs := range command_list {
-            file.WriteString("build "+bs.outfile+": "+bs.cmdtype)
-            for _,f := range bs.infiles {
-                file.WriteString(" $\n  "+f)
-            }
-            for _,dep := range bs.depends {
-                file.WriteString(" $\n  "+dep)
-            }
-            if bs.need_cmd_alias {
-                file.WriteString("\n  "+bs.cmdtype+" = "+bs.cmd+"\n")
-            } else {
-                file.WriteString("\n")
-            }
-            if bs.depfile != "" {
-                file.WriteString("  depf = "+bs.depfile+"\n")
-            }
-            if len(bs.args) > 0 {
-                file.WriteString("  options =")
-                for i,o := range bs.args {
-                    if i & 3 == 3 {
-                        file.WriteString(" $\n   ")
-                    }
-                    file.WriteString(" "+o)
-                }
-                file.WriteString("\n")
-            }
-            file.WriteString("  desc = "+bs.outfile+"\n\n")
-        }
+        outputNinja()
 
         fmt.Println("gobuild: done.")
     } else {
