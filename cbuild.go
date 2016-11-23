@@ -600,10 +600,8 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             if v.Name == "enable_response" {
                 if val == "true" {
                     useResponse = true
-                    fmt.Println(useResponse)
                 } else if val == "false" {
                     useResponse = false
-                    fmt.Println(useResponse)
                 } else {
                     fmt.Println(" warning: link_response value [",v.Value,"] is unsupport(true/false)")
                 }
@@ -838,7 +836,7 @@ func outputNinja() {
         if oc.depend != "" {
             file.WriteString("  depf = "+oc.depend+"\n")
         }
-        file.WriteString("\n")
+        file.WriteString("  desc = "+oc.outfile+"\n\n")
     }
 }
 
