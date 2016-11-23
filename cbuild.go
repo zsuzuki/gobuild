@@ -84,6 +84,7 @@ type BuildCommand struct {
     infiles []string
     outfile string
     depfile string
+    rsp bool
     depends []string
     need_cmd_alias bool
 }
@@ -176,6 +177,7 @@ func create_archive(info BuildInfo,odir string,create_list []string,target_name 
         args : info.archive_options,
         infiles : create_list,
         outfile : arname,
+        rsp : true,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
 
@@ -202,6 +204,7 @@ func create_link(info BuildInfo,odir string,create_list []string,target_name str
         args : info.link_options,
         infiles : create_list,
         outfile : trname,
+        rsp : true,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
@@ -226,6 +229,7 @@ func create_convert(info BuildInfo,loaddir string,odir string,create_list []stri
         args : info.convert_options,
         infiles : clist,
         outfile : cvname,
+        rsp : false,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
 }
@@ -343,6 +347,7 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
                     depends : deps,
                     infiles : srlist,
                     outfile : filepath.ToSlash(filepath.Clean(odir+p.Name)),
+                    rsp : false,
                     need_cmd_alias : false }
                 command_list = append(command_list,cmd)
             } else {
@@ -361,6 +366,7 @@ func create_prebuild(info BuildInfo,loaddir string,odir string,plist []Build) er
                         depends : deps,
                         infiles : []string{ src },
                         outfile : filepath.ToSlash(filepath.Clean(odir+"output/"+dst)),
+                        rsp : false,
                         need_cmd_alias : false }
                     command_list = append(command_list,cmd)
                 }
@@ -526,6 +532,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
                 infiles : []string{ sname },
                 outfile : oname,
                 depfile : dname,
+                rsp : false,
                 need_cmd_alias : true }
             my_list[i] = cmd
         }
@@ -554,7 +561,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         } else {
             fmt.Println("There are no files to convert.",loaddir)
         }
-    } else if NowTarget.Type == "fallthrough" {
+    } else if NowTarget.Type == "passthrough" {
         result.create_list = append(subdir_create_list,create_list...)
     } else {
         //
@@ -582,11 +589,15 @@ func output_rules(file *os.File) {
     file.WriteString("  depfile = $depf\n")
     file.WriteString("  deps = gcc\n\n")
     file.WriteString("rule ar\n")
-    file.WriteString("  command = $ar $options $out $in\n")
-    file.WriteString("  description = Archive: $desc\n\n")
+    file.WriteString("  command = $ar $options $out @$out.rsp\n")
+    file.WriteString("  description = Archive: $desc\n")
+    file.WriteString("  rspfile = $out.rsp\n")
+    file.WriteString("  rspfile_content = $in\n\n")
     file.WriteString("rule link\n")
-    file.WriteString("  command = $link $options -o $out $in\n")
-    file.WriteString("  description = Link: $desc\n\n")
+    file.WriteString("  command = $link $options -o $out $out.rsp\n")
+    file.WriteString("  description = Link: $desc\n")
+    file.WriteString("  rspfile = $out.rsp\n")
+    file.WriteString("  rspfile_content = $in\n\n")
     file.WriteString("rule convert\n")
     file.WriteString("  command = $convert $options -o $out $in\n")
     file.WriteString("  description = Convert: $desc\n\n")

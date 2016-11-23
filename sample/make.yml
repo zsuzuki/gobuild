@@ -7,7 +7,7 @@ variable:
 - name: compiler
   value: clang++
 - name: archiver
-  value: ar
+  value: ranlib
 - name: linker
   value: clang++
 
@@ -57,10 +57,6 @@ define:
 - target: test3
   list:
   - TEST3
-
-archive_option:
-- list:
-  - rc
 
 link_option:
 - type: winclang
