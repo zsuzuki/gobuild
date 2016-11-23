@@ -44,6 +44,14 @@ type Build struct {
     Source []StringList `yaml:",flow"`
 }
 
+type Other struct {
+    Ext string
+    Command string
+    Description string
+    Need_Depend bool
+    Option []StringList `yaml:",flow"`
+}
+
 type Data struct {
     Target []Target `yaml:",flow"`
     Include []StringList `yaml:",flow"`
@@ -58,6 +66,7 @@ type Data struct {
     Source []StringList `yaml:",flow"`
     Convert_List []StringList `yaml:",flow"`
     Subdir []StringList `yaml:",flow"`
+    Other []Other `yaml:",flow"`
 }
 
 //
@@ -74,6 +83,29 @@ func (m MyError) Error() string {
 //
 // build information
 //
+
+//
+type OtherRule struct {
+    compiler string
+    cmd string
+    title string
+    option string
+    need_inc bool
+    need_opt bool
+    need_def bool
+    need_dep bool
+}
+
+type OtherRuleFile struct {
+    rule string
+    compiler string
+    infile string
+    outfile string
+    include string
+    option string
+    define string
+    depend string
+}
 
 //
 type BuildCommand struct {
@@ -120,8 +152,10 @@ var (
     outputdir string
     outputdir_set bool
     append_rules map[string] string
+    other_rule_list map[string] OtherRule
 
     command_list []BuildCommand
+    other_rule_file_list []OtherRuleFile
 
     verboseMode bool
     useResponse bool
@@ -381,8 +415,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
 
     arg1 := append(info.includes,info.defines...)
 
-    my_list := make([]BuildCommand,len(files))
-    for i,f := range files {
+    for _,f := range files {
         of := f
         if f[0] == '$' {
             of = f[1:len(f)]
@@ -404,21 +437,112 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
             }
             carg = append(carg,ca)
         }
-
-        cmd := BuildCommand{
-            cmd : compiler,
-            cmdtype : "compile",
-            args : carg,
-            infiles : []string{ sname },
-            outfile : oname,
-            depfile : dname,
-            need_cmd_alias : true }
-        my_list[i] = cmd
+        ext := filepath.Ext(f)
+        rule, ok := other_rule_list[ext]
+        if ok == false {
+            // normal
+            cmd := BuildCommand{
+                cmd : compiler,
+                cmdtype : "compile",
+                args : carg,
+                infiles : []string{ sname },
+                outfile : oname,
+                depfile : dname,
+                need_cmd_alias : true }
+            command_list = append(command_list,cmd)
+        } else {
+            // custom
+            linc := ""
+            lopt := rule.option
+            ldef := ""
+            if rule.need_inc == true {
+                for _, ii := range info.includes {
+                    linc += " "+ii
+                }
+            }
+            compiler,ok := info.variables[rule.compiler]
+            if ok == true {
+                ocmd := OtherRuleFile{
+                    rule : "compile"+ext[1:len(ext)],
+                    compiler : compiler,
+                    infile : sname,
+                    outfile : oname,
+                    include : linc,
+                    option : lopt,
+                    define : ldef,
+                    depend : "" }
+                if rule.need_dep == true {
+                    ocmd.depend = dname
+                }
+                other_rule_file_list = append(other_rule_file_list,ocmd)
+            } else {
+                fmt.Println("compiler:",rule.compiler,"is not found.")
+            }
+        }
     }
-    command_list = append(command_list,my_list...)
 
     return create_list
 }
+
+//
+// other rule
+//
+func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
+    for _, ot := range olist {
+        ext := ot.Ext
+
+        olist := []string{}
+        for _,o := range getList(ot.Option,info.target) {
+            olist = append_option(olist,o,opt_pre)
+        }
+        opt := ""
+        for _,o := range olist {
+            opt += " "+o
+        }
+
+        need_inc := false
+        need_opt := false
+        need_def := false
+        rule, ok := other_rule_list[ ext ]
+        if ok == false {
+
+            // no exist rule
+            cmdl := strings.Split(ot.Command," ")
+            compiler := ""
+
+            cmdline := "$compiler"
+            for i,c := range cmdl {
+                if i == 0 {
+                    compiler = c
+                } else if c[0] == '@' {
+                    switch c {
+                    case "@include": need_inc = true
+                    case "@option": need_opt = true
+                    case "@define": need_def = true
+                    }
+                    cmdline += " $" + c[1:len(c)]
+                } else {
+                    cmdline += " "+c
+                }
+            }
+
+            rule = OtherRule{
+                compiler : compiler,
+                cmd : cmdline,
+                title : ot.Description,
+                option : opt,
+                need_inc : need_inc,
+                need_opt : need_opt,
+                need_def : need_def,
+                need_dep : ot.Need_Depend }
+        } else {
+            rule.option += opt
+        }
+        other_rule_list[ ext ] = rule
+    }
+    return nil
+}
+
 
 
 
@@ -529,6 +653,11 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         info.link_options = append_option(info.link_options,l,opt_pre)
     }
 
+    err = create_other_rules(info,d.Other,opt_pre)
+    if err != nil {
+        return result,err
+    }
+
     files := getList(d.Source,info.target)
     cvfiles := getList(d.Convert_List,info.target)
 
@@ -546,16 +675,16 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         }
     }
 
-    create_list := []string{}
-
     // pre build files
     err = create_prebuild(info,loaddir,d.Prebuild)
     if err != nil {
         return result,err
     }
 
+    // create compile list
+    create_list := []string{}
     if len(files) > 0 {
-        create_list= append(create_list,compile_files(info,objdir,loaddir,files)...)
+        create_list = compile_files(info,objdir,loaddir,files)
     }
 
     if NowTarget.Type == "library" {
@@ -603,7 +732,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 func output_rules(file *os.File) {
     file.WriteString("builddir = "+outputdir+"\n\n")
     file.WriteString("rule compile\n")
-    file.WriteString("  command = $compile $options $in -o $out\n")
+    file.WriteString("  command = $compile $options -o $out $in\n")
     file.WriteString("  description = Compile: $desc\n")
     file.WriteString("  depfile = $depf\n")
     file.WriteString("  deps = gcc\n\n")
@@ -630,6 +759,19 @@ func output_rules(file *os.File) {
     file.WriteString("rule convert\n")
     file.WriteString("  command = $convert $options -o $out $in\n")
     file.WriteString("  description = Convert: $desc\n\n")
+
+    // other compile rules.
+    for ext,rule := range other_rule_list {
+        file.WriteString("rule compile"+ext[1:len(ext)]+"\n")
+        file.WriteString("  command = "+rule.cmd+"\n")
+        file.WriteString("  description = "+rule.title+": $desc\n")
+        if rule.need_dep == true {
+            file.WriteString("  depfile = $depf\n")
+            file.WriteString("  deps = gcc\n\n")
+        } else {
+            file.WriteString("\n")
+        }
+    }
 
     // appended original rules.
     for ar,arv := range append_rules {
@@ -684,6 +826,20 @@ func outputNinja() {
         }
         file.WriteString("  desc = "+bs.outfile+"\n\n")
     }
+    for _,oc := range other_rule_file_list {
+        file.WriteString("build "+oc.outfile+": "+oc.rule+" "+oc.infile+"\n")
+        file.WriteString("  compiler = "+oc.compiler+"\n")
+        if oc.include != "" {
+            file.WriteString("  include = "+oc.include+"\n")
+        }
+        if oc.option != "" {
+            file.WriteString("  option = "+oc.option+"\n")
+        }
+        if oc.depend != "" {
+            file.WriteString("  depf = "+oc.depend+"\n")
+        }
+        file.WriteString("\n")
+    }
 }
 
 
@@ -714,6 +870,8 @@ func main() {
 
     append_rules = map[string] string{}
     command_list = []BuildCommand{}
+    other_rule_list = map[string] OtherRule{}
+    other_rule_file_list = []OtherRuleFile{}
 
     if target_name != "" {
         fmt.Println("gobuild: make target: "+target_name)
@@ -734,7 +892,7 @@ func main() {
         os.Exit(1)
     }
 
-    nlen := len(command_list)
+    nlen := len(command_list) + len(other_rule_file_list)
     if nlen > 0 {
 
         outputNinja()

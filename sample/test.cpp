@@ -4,6 +4,11 @@
 #include <data.h>
 
 extern void put();
+#ifndef TEST3
+extern "C" {
+  void putHello();
+};
+#endif
 
 int
 main()
@@ -15,10 +20,7 @@ main()
   std::cout << d.get() << std::endl;
   put();
 #ifndef TEST3
-  {
-    extern void putHello();
-    putHello();
-  }
+  putHello();
 #endif
   return 0;
 }

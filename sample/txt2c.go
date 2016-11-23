@@ -39,11 +39,11 @@ func main() {
     }
 
     scanner := bufio.NewScanner(fp)
-    ofp.WriteString("#include <iostream>\nvoid\nputHello()\n{\n")
+    ofp.WriteString("#include <stdio.h>\n#include <string.h>\nvoid\nputHello()\n{\n")
     for scanner.Scan() {
         str := scanner.Text()
         if str != "" {
-            s := fmt.Sprintf("  std::cout << \"%s\" << std::endl;\n",str)
+            s := fmt.Sprintf("  printf(\"%s\\n\");\n",str)
             ofp.WriteString(s)
         }
     }

@@ -3,13 +3,15 @@
 #
 
 variable:
-# default(debug)
+# default
 - name: compiler
   value: clang++
 - name: archiver
-  value: ranlib
+  value: ar
 - name: linker
   value: clang++
+- name: compiler.c
+  value: clang
 
 # windows clang
 - name: compiler
@@ -22,42 +24,51 @@ variable:
   value: c:/Program Files/LLVM/bin/clang++.exe
   type: winclang
 
+# text -> c execute
 - name: txt2c
   value: $txt2c -o $out $in
-
+# test2c tool build
 - name: txt2c_go
   value: go build -o $out $in
 
+# not default rules
+other:
+- ext: .c
+  command: compiler.c @include @option -o $out $in
+  description: Compile C
+  need_depend: true
+  option:
+  - list: [ c, g, Wall, MMD, MT $out, MF $dep ]
+    debug: [ DDEBUG, O0 ]
+    release: [ O2 ]
+
+# include settings
 include:
-- list:
-  - ./include
-  - ./data
+- list: [ ./include, ./data ]
 - type: winclang
   list:
   - c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include
   - C:/Program Files (x86)/Windows Kits/10/Include/10.0.10240.0/ucrt
   - C:/Program Files/Microsoft SDKs/Windows/v6.0A/Include
 
+# option settings
 option:
-- list:
-  - c
-  - g
-  - Wall
-  - std=c++14
-  - Werror
-  - MMD
-  - MT $out
-  - MF $dep
+- list: [ c, g, std=c++14, Wall, Werror, MMD, MT $out, MF $dep ]
   debug:
   - O0
   release:
-  - O3
+  - O2
 
+# define lists
 define:
 - target: test3
-  list:
-  - TEST3
+  list: [ TEST3 ]
 
+# archiver options
+archive_option:
+- list: [ rc ]
+
+# linker options
 link_option:
 - type: winclang
   list:
@@ -68,12 +79,13 @@ link_option:
   - LC:/Program Files (x86)/Windows Kits/10/Lib/10.0.10240.0/ucrt/x64
   - lstdc++
 
+# source file list
 source:
 - target: test
   list:
   - test.cpp
   - sub/test_sub.cpp
-  - $hello.cpp
+  - $hello.c
 - target: test2
   list:
   - test2.cpp
@@ -81,8 +93,9 @@ source:
   list:
   - test2.cpp
 
+# pre build rule
 prebuild:
-- name: hello.cpp
+- name: hello.c
   command: txt2c
   source:
   - list:
@@ -93,6 +106,7 @@ prebuild:
   - list:
     - txt2c.go
 
+# target define
 target:
 - name: test
   type: execute
@@ -101,6 +115,7 @@ target:
 - name: test3
   type: execute
 
+# sub directories
 subdir:
 - list:
   - data
