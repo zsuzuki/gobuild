@@ -322,7 +322,10 @@ func get_target(info BuildInfo,tlist []Target) (Target,string,bool) {
 func replace_path(value string,add_dir string) (string, string) {
     url := strings.Split(value," ")
     ucmd := url[0]
-    p := filepath.ToSlash(filepath.Clean(add_dir+ucmd[1:len(ucmd)]))
+    if ucmd[0] == '$' {
+        ucmd = ucmd[1:len(ucmd)]
+    }
+    p := filepath.ToSlash(filepath.Clean(add_dir+ucmd))
     result := p
     for i,uu := range url {
         if i > 0 {
@@ -347,6 +350,8 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
             for i,src := range srlist {
                 if src[0] == '$' {
                     srlist[i] = filepath.ToSlash(filepath.Clean(info.outputdir+"output/"+src[1:len(src)]))
+                } else if src == "always" {
+                    srlist[i] = src+"|"
                 } else {
                     srlist[i] = filepath.ToSlash(filepath.Clean(loaddir+src))
                 }
@@ -364,7 +369,7 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                     r, d := replace_path(ur,info.outputdir)
                     deps = append(deps,d)
                     ur = r
-                } else if ur[0] == '.' {
+                } else if strings.HasPrefix(ur,"../") || strings.HasPrefix(ur,"./") {
                     r, d := replace_path(ur,loaddir)
                     deps = append(deps,d)
                     ur = r
@@ -420,8 +425,10 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
         if f[0] == '$' {
             of = f[1:len(f)]
             f = info.outputdir + of
+        } else {
+            f = loaddir+f
         }
-        sname := filepath.ToSlash(filepath.Clean(loaddir+f))
+        sname := filepath.ToSlash(filepath.Clean(f))
         oname := filepath.ToSlash(filepath.Clean(objdir+of+".o"))
         dname := filepath.ToSlash(filepath.Clean(objdir+of+".d"))
         create_list = append(create_list,oname)
@@ -777,6 +784,8 @@ func output_rules(file *os.File) {
         file.WriteString("  command = "+arv+"\n")
         file.WriteString("  description = "+ar+": $desc\n\n")
     }
+
+    file.WriteString("build always: phony\n\n")
 }
 
 
