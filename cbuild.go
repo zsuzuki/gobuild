@@ -89,7 +89,7 @@ type OtherRule struct {
     compiler string
     cmd string
     title string
-    option string
+    option []string
     need_inc bool
     need_opt bool
     need_def bool
@@ -460,12 +460,22 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
         } else {
             // custom
             linc := ""
-            lopt := rule.option
             ldef := ""
             if rule.need_inc == true {
                 for _, ii := range info.includes {
                     linc += " "+ii
                 }
+            }
+            lopt := ""
+            for _,lo := range rule.option {
+                if lo == "$out" {
+                    lo = oname
+                } else if lo == "$dep" {
+                    lo = dname
+                } else if lo == "$in" {
+                    lo = sname
+                }
+                lopt += " " + lo
             }
             compiler,ok := info.variables[rule.compiler]
             if ok == true {
@@ -502,10 +512,6 @@ func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
         for _,o := range getList(ot.Option,info.target) {
             olist = append_option(olist,o,opt_pre)
         }
-        opt := ""
-        for _,o := range olist {
-            opt += " "+o
-        }
 
         need_inc := false
         need_opt := false
@@ -537,13 +543,13 @@ func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
                 compiler : compiler,
                 cmd : cmdline,
                 title : ot.Description,
-                option : opt,
+                option : olist,
                 need_inc : need_inc,
                 need_opt : need_opt,
                 need_def : need_def,
                 need_dep : ot.Need_Depend }
         } else {
-            rule.option += opt
+            rule.option = append(rule.option,olist...)
         }
         other_rule_list[ ext ] = rule
     }
