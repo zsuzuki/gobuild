@@ -378,8 +378,8 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
             }
 
             if p.Name[0] != '$' {
-                outfile,_ := filepath.Abs(filepath.ToSlash(filepath.Clean(info.outputdir+p.Name)))
-                outfile = strings.Replace(outfile,":","$:",-1)
+                outfile,_ := filepath.Abs(info.outputdir+p.Name)
+                outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)),":","$:",-1)
                 cmd := BuildCommand{
                     cmd : p.Command,
                     cmdtype : mycmd,
@@ -398,8 +398,8 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                     } else {
                         dst += ext
                     }
-                    outfile,_ := filepath.Abs(filepath.ToSlash(filepath.Clean(info.outputdir+"output/"+dst)))
-                    outfile = strings.Replace(outfile,":","$:",-1)
+                    outfile,_ := filepath.Abs(info.outputdir+"output/"+dst)
+                    outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)),":","$:",-1)
                     cmd := BuildCommand{
                         cmd : p.Command,
                         cmdtype : mycmd,
@@ -433,8 +433,8 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
             f = loaddir+f
         }
         f,_ = filepath.Abs(f)
-        f = strings.Replace(f,":","$:",-1)
         sname := filepath.ToSlash(filepath.Clean(f))
+        sname = strings.Replace(sname,":","$:",-1)
         oname := filepath.ToSlash(filepath.Clean(objdir+of+".o"))
         dname := filepath.ToSlash(filepath.Clean(objdir+of+".d"))
         create_list = append(create_list,oname)
