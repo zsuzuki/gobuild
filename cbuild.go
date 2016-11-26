@@ -323,7 +323,7 @@ func replace_path(value string,add_dir string) (string, string) {
     url := strings.Split(value," ")
     ucmd := url[0]
     if ucmd[0] == '$' {
-        ucmd = ucmd[1:len(ucmd)]
+        ucmd = ucmd[1:]
     }
     p := filepath.ToSlash(filepath.Clean(add_dir+ucmd))
     result := p
@@ -367,6 +367,8 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
             if af == false {
                 if ur[0] == '$' {
                     r, d := replace_path(ur,info.outputdir)
+                    abs,_ := filepath.Abs(d)
+                    d = filepath.ToSlash(abs)
                     deps = append(deps,d)
                     ur = r
                 } else if strings.HasPrefix(ur,"../") || strings.HasPrefix(ur,"./") {
@@ -427,7 +429,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
     for _,f := range files {
         of := f
         if f[0] == '$' {
-            of = f[1:len(f)]
+            of = f[1:]
             f = info.outputdir + of
         } else {
             f = loaddir+f
@@ -486,7 +488,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
             compiler,ok := info.variables[rule.compiler]
             if ok == true {
                 ocmd := OtherRuleFile{
-                    rule : "compile"+ext[1:len(ext)],
+                    rule : "compile"+ext[1:],
                     compiler : compiler,
                     infile : sname,
                     outfile : oname,
@@ -539,7 +541,7 @@ func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
                     case "@option": need_opt = true
                     case "@define": need_def = true
                     }
-                    cmdline += " $" + c[1:len(c)]
+                    cmdline += " $" + c[1:]
                 } else {
                     cmdline += " "+c
                 }
@@ -648,7 +650,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 
     for _,i := range getList(d.Include,info.target) {
         if strings.HasPrefix(i,"$output") {
-            i = filepath.Clean(info.outputdir + "output" + i[7:len(i)])
+            i = filepath.Clean(info.outputdir + "output" + i[7:])
         } else if filepath.IsAbs(i) == false {
             i = filepath.Clean(loaddir + i)
         }
@@ -779,7 +781,7 @@ func output_rules(file *os.File) {
 
     // other compile rules.
     for ext,rule := range other_rule_list {
-        file.WriteString("rule compile"+ext[1:len(ext)]+"\n")
+        file.WriteString("rule compile"+ext[1:]+"\n")
         file.WriteString("  command = "+rule.cmd+"\n")
         file.WriteString("  description = "+rule.title+": $desc\n")
         if rule.need_dep == true {
