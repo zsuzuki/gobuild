@@ -61,6 +61,8 @@ type Data struct {
     Archive_Option []StringList `yaml:",flow"`
     Convert_Option []StringList `yaml:",flow"`
     Link_Option []StringList `yaml:",flow"`
+    Link_Depend []StringList `yaml:",flow"`
+    Libraries []StringList `yaml:",flow"`
     Prebuild []Build `yaml:",flow"`
     Postbuild []Build `yaml:",flow"`
     Source []StringList `yaml:",flow"`
@@ -135,6 +137,8 @@ type BuildInfo struct {
     archive_options []string
     convert_options []string
     link_options []string
+    link_depends []string
+    libraries []string
     select_target string
     target string
     outputdir string
@@ -235,9 +239,10 @@ func create_link(info BuildInfo,create_list []string,target_name string) {
     cmd := BuildCommand{
         cmd : linker,
         cmdtype : "link",
-        args : info.link_options,
+        args : append(info.link_options,info.libraries...),
         infiles : create_list,
         outfile : trname,
+        depends : info.link_depends,
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
@@ -671,6 +676,12 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     for _,l := range getList(d.Link_Option,info.target) {
         info.link_options = append_option(info.link_options,l,opt_pre)
     }
+    for _,ls := range getList(d.Libraries,info.target) {
+        info.libraries = append_option(info.libraries,ls,opt_pre+"l")
+    }
+    for _,ld := range getList(d.Link_Depend,info.target) {
+        info.link_depends = append_option(info.link_depends,ld,"")
+    }
 
     err = create_other_rules(info,d.Other,opt_pre)
     if err != nil {
@@ -767,7 +778,7 @@ func output_rules(file *os.File) {
     }
     file.WriteString("rule link\n")
     if useResponse == true {
-        file.WriteString("  command = $link $options -o $out $out.rsp\n")
+        file.WriteString("  command = $link $options -o $out @$out.rsp\n")
         file.WriteString("  description = Link: $desc\n")
         file.WriteString("  rspfile = $out.rsp\n")
         file.WriteString("  rspfile_content = $in\n\n")
@@ -825,7 +836,8 @@ func outputNinja() {
             file.WriteString(" $\n  "+f)
         }
         for _,dep := range bs.depends {
-            file.WriteString(" $\n  "+dep)
+            depstr := strings.Replace(dep,":","$:",1)
+            file.WriteString(" $\n  "+depstr)
         }
         if bs.need_cmd_alias {
             file.WriteString("\n  "+bs.cmdtype+" = "+bs.cmd+"\n")
@@ -841,7 +853,8 @@ func outputNinja() {
                 if i & 3 == 3 {
                     file.WriteString(" $\n   ")
                 }
-                file.WriteString(" "+o)
+                ostr := strings.Replace(o,":","$:",1)
+                file.WriteString(" "+ostr)
             }
             file.WriteString("\n")
         }
