@@ -34,6 +34,7 @@ type Variable struct {
     Name string
     Value string
     Type string
+    Target string
     Build string
 }
 type Build struct {
@@ -341,6 +342,27 @@ func replace_path(value string,add_dir string) (string, string) {
 }
 
 //
+func replace_variable(info BuildInfo,str string,start int) (string, error) {
+    src := strings.Split(str[start+2:],"${")
+    ret := str[:start]
+    for _,s := range src {
+        br := strings.Index(s,"}")
+        if br == -1 {
+            e := MyError{ str: "variable not close ${name}." }
+            return "",e
+        }
+        vname := s[:br]
+        v,ok := info.variables[vname]
+        if ok == false {
+            e := MyError{ str: "variable <"+vname+"> is not found." }
+            return "",e
+        }
+        ret += v + s[br+1:]
+    }
+    return ret,nil
+}
+
+//
 // pre build
 //
 func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
@@ -381,11 +403,24 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                     deps = append(deps,d)
                     ur = r
                 }
+                ur = strings.Replace(ur,"$target",info.target,-1)
+                ev := strings.Index(ur,"${")
+                if ev != -1 {
+                    var e error
+                    ur,e = replace_variable(info,ur,ev)
+                    if e != nil {
+                        return e
+                    }
+                }
                 append_rules[mycmd] = ur
             }
 
-            if p.Name[0] != '$' {
-                outfile,_ := filepath.Abs(info.outputdir+p.Name)
+            if p.Name[0] != '$' || strings.HasPrefix(p.Name,"$target/") {
+                pn := p.Name
+                if pn[0] == '$' {
+                    pn = strings.Replace(pn,"$target/","/."+info.target+"/",1)
+                }
+                outfile,_ := filepath.Abs(info.outputdir+pn)
                 outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)),":","$:",-1)
                 cmd := BuildCommand{
                     cmd : p.Command,
@@ -434,7 +469,11 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
     for _,f := range files {
         of := f
         if f[0] == '$' {
-            of = f[1:]
+            if strings.HasPrefix(f,"$target/") {
+                of = strings.Replace(of,"$target/","/."+info.target+"/",1)
+            } else {
+                of = f[1:]
+            }
             f = info.outputdir + of
         } else {
             f = loaddir+f
@@ -569,6 +608,24 @@ func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
     return nil
 }
 
+//
+func get_variable(info BuildInfo,v Variable) (string, bool) {
+    if v.Type != "" && v.Type != target_type {
+        return "",false
+    }
+    if v.Target != "" && v.Target != info.target {
+        return "",false
+    }
+    if v.Build != "" {
+        if isDebug && v.Build != "Debug" && v.Build != "debug" {
+            return "",false
+        } else if isRelease && v.Build != "Release" && v.Build != "release" {
+            return "",false
+        }
+    }
+    return v.Value,true
+}
+
 
 
 
@@ -621,8 +678,8 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     // get rules
     //
     for _,v := range d.Variable {
-        if v.Type == "" || v.Type == target_type {
-            val := v.Value
+        val,ok := get_variable(info,v)
+        if ok {
             if v.Name == "enable_response" {
                 if val == "true" {
                     useResponse = true
@@ -633,7 +690,6 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
                 }
             }
             info.variables[v.Name] = val
-            //
         }
     }
     if outputdir_set == false {

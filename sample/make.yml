@@ -13,6 +13,9 @@ variable:
 - name: compiler.c
   value: clang
 
+- name: test_var
+  value: Hello
+
 # windows clang
 - name: compiler
   value: c:/Program Files/LLVM/bin/clang++.exe
@@ -26,7 +29,7 @@ variable:
 
 # text -> c execute
 - name: txt2c
-  value: $txt2c -o $out $in
+  value: $txt2c -o $out $in ${test_var}/help
 # test2c tool build
 - name: txt2c_go
   value: go build -o $out $in
