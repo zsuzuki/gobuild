@@ -527,7 +527,8 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
         dname := filepath.ToSlash(filepath.Clean(objdir+of+".d"))
         create_list = append(create_list,oname)
 
-        carg := arg1
+        carg := []string{}
+        carg = append(carg,arg1...)
         for _,ca := range info.options {
             if ca == "$out" {
                 ca = oname
