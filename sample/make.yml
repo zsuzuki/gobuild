@@ -7,12 +7,14 @@ variable:
 - name: compiler
   value: ${tool_path}clang++
 - name: archiver
-  value: ${tool_path)ar
+  value: ${tool_path}ar
 - name: linker
   value: ${tool_path}clang++
 - name: compiler.c
   value: ${tool_path}clang
 
+- name: execute_suffix
+  value: .elf
 
 # for windows clang
 - name: tool_path
@@ -102,7 +104,7 @@ prebuild:
     - txt2c.go
 
 # target define
-target:
+ target:
 - name: test
   type: execute
 - name: test2

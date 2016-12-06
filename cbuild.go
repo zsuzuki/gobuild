@@ -199,7 +199,7 @@ func getList(block []StringList,target_name string) []string {
 //
 // archive objects
 //
-func create_archive(info BuildInfo,create_list []string,target_name string) string {
+func create_archive(info BuildInfo,create_list []string,target_name string) (string,error) {
 
     arname := info.outputdir
     if target_type == "WIN32" {
@@ -212,7 +212,11 @@ func create_archive(info BuildInfo,create_list []string,target_name string) stri
     archiver := info.variables["archiver"]
     avi := strings.Index(archiver,"${")
     if avi != -1 {
-        archiver,_ = replace_variable(info,archiver,avi)
+        var e error
+        archiver,e = replace_variable(info,archiver,avi,true)
+        if e != nil {
+            return "",e
+        }
     }
 
     cmd := BuildCommand{
@@ -224,25 +228,28 @@ func create_archive(info BuildInfo,create_list []string,target_name string) stri
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
 
-    return arname
+    return arname,nil
 }
 
 //
 // link objects
 //
-func create_link(info BuildInfo,create_list []string,target_name string) {
-    trname := info.outputdir
-    if target_type == "WIN32" {
-        trname += target_name + ".exe"
-    } else {
-        trname += target_name
+func create_link(info BuildInfo,create_list []string,target_name string) error {
+    trname := info.outputdir + target_name
+    esuf, ok := info.variables["execute_suffix"]
+    if ok {
+        trname += esuf
     }
     trname = filepath.ToSlash(filepath.Clean(trname))
 
     linker := info.variables["linker"]
     lvi := strings.Index(linker,"${")
     if lvi != -1 {
-        linker,_ = replace_variable(info,linker,lvi)
+        var e error
+        linker,e = replace_variable(info,linker,lvi,true)
+        if e != nil {
+            return e
+        }
     }
 
     cmd := BuildCommand{
@@ -255,6 +262,7 @@ func create_link(info BuildInfo,create_list []string,target_name string) {
         need_cmd_alias : true }
     command_list = append(command_list,cmd)
     //fmt.Println("-o " + NowTarget.Name + flist)
+    return nil
 }
 
 //
@@ -350,20 +358,24 @@ func replace_path(value string,add_dir string) (string, string) {
 }
 
 //
-func replace_variable(info BuildInfo,str string,start int) (string, error) {
+func replace_variable(info BuildInfo,str string,start int,no_error bool) (string, error) {
     src := strings.Split(str[start+2:],"${")
     ret := str[:start]
     for _,s := range src {
         br := strings.Index(s,"}")
         if br == -1 {
-            e := MyError{ str: "variable not close ${name}." }
+            e := MyError{ str: "variable not close ${name}. \"${"+s+"\"" }
             return "",e
         }
         vname := s[:br]
         v,ok := info.variables[vname]
         if ok == false {
-            e := MyError{ str: "variable <"+vname+"> is not found." }
-            return "",e
+            if no_error {
+                v = ""
+            } else {
+                e := MyError{ str: "variable <"+vname+"> is not found." }
+                return "",e
+            }
         }
         ret += v + s[br+1:]
     }
@@ -415,7 +427,7 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                 ev := strings.Index(ur,"${")
                 if ev != -1 {
                     var e error
-                    ur,e = replace_variable(info,ur,ev)
+                    ur,e = replace_variable(info,ur,ev,false)
                     if e != nil {
                         return e
                     }
@@ -468,12 +480,15 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
 //
 // compile files
 //
-func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (create_list []string) {
+func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (create_list []string,e error) {
 
     compiler := info.variables["compiler"]
     cvi := strings.Index(compiler,"${")
     if cvi != -1 {
-        compiler,_ = replace_variable(info,compiler,cvi)
+        compiler,e = replace_variable(info,compiler,cvi,true)
+        if e != nil {
+            return []string{},e
+        }
     }
 
     arg1 := append(info.includes,info.defines...)
@@ -545,7 +560,11 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
             if ok == true {
                 cvi = strings.Index(compiler,"${")
                 if cvi != -1 {
-                    compiler,_ = replace_variable(info,compiler,cvi)
+                    var e error
+                    compiler,e = replace_variable(info,compiler,cvi,true)
+                    if e != nil {
+                        return []string{},e
+                    }
                 }
                 ocmd := OtherRuleFile{
                     rule : "compile"+ext[1:],
@@ -566,7 +585,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
         }
     }
 
-    return create_list
+    return create_list,nil
 }
 
 //
@@ -786,13 +805,22 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     // create compile list
     create_list := []string{}
     if len(files) > 0 {
-        create_list = compile_files(info,objdir,loaddir,files)
+        var e error
+        create_list,e = compile_files(info,objdir,loaddir,files)
+        if e != nil {
+            result.success = false
+            return result,e
+        }
     }
 
     if NowTarget.Type == "library" {
         // archive
         if len(create_list) > 0 {
-            arname := create_archive(info,create_list,NowTarget.Name)
+            arname, e := create_archive(info,create_list,NowTarget.Name)
+            if e != nil {
+                result.success = false
+                return result,e
+            }
             result.create_list = append(subdir_create_list,arname)
             //fmt.Println(info.archive_options+arname+alist)
         } else {
@@ -801,7 +829,11 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     } else if NowTarget.Type == "execute" {
         // link program
         if len(create_list) > 0 || len(subdir_create_list) > 0 {
-            create_link(info,append(create_list,subdir_create_list...),NowTarget.Name)
+            e := create_link(info,append(create_list,subdir_create_list...),NowTarget.Name)
+            if e != nil {
+                result.success = false
+                return result,e
+            }
         } else {
             fmt.Println("There are no files to build.",loaddir)
         }
