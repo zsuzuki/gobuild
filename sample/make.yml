@@ -5,31 +5,23 @@
 variable:
 # default
 - name: compiler
-  value: clang++
+  value: ${tool_path}clang++
 - name: archiver
-  value: ar
+  value: ${tool_path)ar
 - name: linker
-  value: clang++
+  value: ${tool_path}clang++
 - name: compiler.c
-  value: clang
+  value: ${tool_path}clang
 
-- name: test_var
-  value: Hello
 
-# windows clang
-- name: compiler
-  value: c:/Program Files/LLVM/bin/clang++.exe
-  type: winclang
-- name: archiver
-  value: c:/Program Files/LLVM/bin/llvm-ar.exe
-  type: winclang
-- name: linker
-  value: c:/Program Files/LLVM/bin/clang++.exe
+# for windows clang
+- name: tool_path
+  value: c:/Program Files/LLVM/bin/
   type: winclang
 
 # text -> c execute
 - name: txt2c
-  value: $txt2c -o $out $in ${test_var}/help
+  value: $txt2c -o $out $in
 # test2c tool build
 - name: txt2c_go
   value: go build -o $out $in

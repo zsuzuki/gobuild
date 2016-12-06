@@ -210,6 +210,10 @@ func create_archive(info BuildInfo,create_list []string,target_name string) stri
     arname = filepath.ToSlash(filepath.Clean(arname))
 
     archiver := info.variables["archiver"]
+    avi := strings.Index(archiver,"${")
+    if avi != -1 {
+        archiver,_ = replace_variable(info,archiver,avi)
+    }
 
     cmd := BuildCommand{
         cmd : archiver,
@@ -236,6 +240,10 @@ func create_link(info BuildInfo,create_list []string,target_name string) {
     trname = filepath.ToSlash(filepath.Clean(trname))
 
     linker := info.variables["linker"]
+    lvi := strings.Index(linker,"${")
+    if lvi != -1 {
+        linker,_ = replace_variable(info,linker,lvi)
+    }
 
     cmd := BuildCommand{
         cmd : linker,
@@ -463,6 +471,10 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
 func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (create_list []string) {
 
     compiler := info.variables["compiler"]
+    cvi := strings.Index(compiler,"${")
+    if cvi != -1 {
+        compiler,_ = replace_variable(info,compiler,cvi)
+    }
 
     arg1 := append(info.includes,info.defines...)
 
@@ -531,6 +543,10 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
             }
             compiler,ok := info.variables[rule.compiler]
             if ok == true {
+                cvi = strings.Index(compiler,"${")
+                if cvi != -1 {
+                    compiler,_ = replace_variable(info,compiler,cvi)
+                }
                 ocmd := OtherRuleFile{
                     rule : "compile"+ext[1:],
                     compiler : compiler,
@@ -673,7 +689,6 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
     info.select_target = ""
 
-    opt_pre := info.variables["option_prefix"]
     //
     // get rules
     //
@@ -692,6 +707,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             info.variables[v.Name] = val
         }
     }
+    opt_pre := info.variables["option_prefix"]
     if outputdir_set == false {
         def_type, dok := info.variables["default_type"]
         if dok == true {
