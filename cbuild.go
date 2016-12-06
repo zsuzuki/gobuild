@@ -411,7 +411,9 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
             }
             for i,src := range srlist {
                 if src[0] == '$' {
-                    srlist[i] = filepath.ToSlash(filepath.Clean(info.outputdir+"output/"+src[1:len(src)]))
+                    sabs,_ := filepath.Abs(info.outputdir+"output/"+src[1:len(src)])
+                    sabs = strings.Replace(sabs,":","$:",1)
+                    srlist[i] = filepath.ToSlash(filepath.Clean(sabs))
                 } else if src == "always" {
                     srlist[i] = src+"|"
                 } else {
