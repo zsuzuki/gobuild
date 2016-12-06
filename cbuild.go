@@ -252,10 +252,17 @@ func create_link(info BuildInfo,create_list []string,target_name string) error {
         }
     }
 
+    options := []string{}
+    for _,lo := range info.link_options {
+        lo = strings.Replace(lo,"$out",trname,-1)
+        options = append(options,lo)
+    }
+    options = append(options,info.libraries...)
+
     cmd := BuildCommand{
         cmd : linker,
         cmdtype : "link",
-        args : append(info.link_options,info.libraries...),
+        args : options,
         infiles : create_list,
         outfile : trname,
         depends : info.link_depends,
@@ -291,13 +298,21 @@ func create_convert(info BuildInfo,loaddir string,create_list []string,target_na
 //
 // option
 //
-func append_option(lists []string,opt string,opt_pre string) []string {
+func append_option(info BuildInfo,lists []string,opt string,opt_pre string) ([]string, error) {
     sl := strings.Split(opt," ")
     sl[0] = opt_pre+sl[0]
     for _,so := range sl {
+        si := strings.Index(so,"${")
+        if si != -1 {
+            var e error
+            so,e = replace_variable(info,so,si,false)
+            if e != nil {
+                return lists,e
+            }
+        }
         lists = append(lists,so)
     }
-    return lists
+    return lists,nil
 }
 
 //
@@ -597,7 +612,11 @@ func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
 
         olist := []string{}
         for _,o := range getList(ot.Option,info.target) {
-            olist = append_option(olist,o,opt_pre)
+            var e error
+            olist,e = append_option(info,olist,o,opt_pre)
+            if e != nil {
+                return e
+            }
         }
 
         need_inc := false
@@ -750,28 +769,60 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         } else if filepath.IsAbs(i) == false {
             i = filepath.Clean(loaddir + i)
         }
+        ii := strings.Index(i,"${")
+        if ii != -1 {
+            i,err = replace_variable(info,i,ii,false)
+            if err != nil {
+                result.success = false
+                return result,err
+            }
+        }
         info.includes = append(info.includes,opt_pre + "I" + filepath.ToSlash(i))
     }
     for _,d := range getList(d.Define,info.target) {
         info.defines = append(info.defines,opt_pre + "D" + d)
     }
     for _,o := range getList(d.Option,info.target) {
-        info.options = append_option(info.options,o,opt_pre)
+        info.options,err = append_option(info,info.options,o,opt_pre)
+        if err != nil {
+            result.success = false
+            return result,err
+        }
     }
     for _,a := range getList(d.Archive_Option,info.target) {
-        info.archive_options = append_option(info.archive_options,a,"")
+        info.archive_options,err = append_option(info,info.archive_options,a,"")
+        if err != nil {
+            result.success = false
+            return result,err
+        }
     }
     for _,c := range getList(d.Convert_Option,info.target) {
-        info.convert_options = append_option(info.convert_options,c,"")
+        info.convert_options,err = append_option(info,info.convert_options,c,"")
+        if err != nil {
+            result.success = false
+            return result,err
+        }
     }
     for _,l := range getList(d.Link_Option,info.target) {
-        info.link_options = append_option(info.link_options,l,opt_pre)
+        info.link_options,err = append_option(info,info.link_options,l,opt_pre)
+        if err != nil {
+            result.success = false
+            return result,err
+        }
     }
     for _,ls := range getList(d.Libraries,info.target) {
-        info.libraries = append_option(info.libraries,ls,opt_pre+"l")
+        info.libraries,err = append_option(info,info.libraries,ls,opt_pre+"l")
+        if err != nil {
+            result.success = false
+            return result,err
+        }
     }
     for _,ld := range getList(d.Link_Depend,info.target) {
-        info.link_depends = append_option(info.link_depends,ld,"")
+        info.link_depends,err = append_option(info,info.link_depends,ld,"")
+        if err != nil {
+            result.success = false
+            return result,err
+        }
     }
 
     err = create_other_rules(info,d.Other,opt_pre)
