@@ -13,6 +13,7 @@ import (
     "strings"
     //"os/exec"
     //"unsafe"
+    "github.com/kuma777/go-msbuild"
 )
 
 //
@@ -1035,11 +1036,34 @@ func outputNinja() {
 }
 
 
+//
+// create vcxproj
+//
+func outputMSBuild(outdir, projname string) {
+  var targets []string;
+
+  for _, command := range command_list {
+    if command.cmdtype != "compile" {
+      continue
+    }
+
+    for _, infile := range command.infiles {
+      targets = append(targets, strings.Replace(infile, "$:", ":", 1))
+    }
+  }
+
+  msbuild.ExportProject(targets, outdir, projname)
+}
+
 
 //
 // application interface
 //
 func main() {
+
+    msbuild  := false
+    projdir  := ""
+    projname := ""
 
     flag.BoolVar(&verboseMode,"v",false,"verbose mode")
     flag.BoolVar(&isRelease,"release",false,"release build")
@@ -1047,6 +1071,9 @@ func main() {
     flag.StringVar(&target_type,"type","default","build target type")
     flag.StringVar(&target_name,"t","","build target name")
     flag.StringVar(&outputdir,"o","build","build directory")
+    flag.BoolVar(&msbuild,"msbuild",false,"Export MSBuild project")
+    flag.StringVar(&projdir,"msbuild-dir","./","MSBuild project output directory")
+    flag.StringVar(&projname,"msbuild-proj","out","MSBuild project name")
     flag.Parse()
 
     if isRelease {
@@ -1088,6 +1115,10 @@ func main() {
     if nlen > 0 {
 
         outputNinja()
+
+        if msbuild {
+          outputMSBuild(projdir, projname)
+        }
 
         fmt.Println("gobuild: done.")
     } else {
