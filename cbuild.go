@@ -161,6 +161,7 @@ var (
     isDevelop bool
     target_type string
     target_name string
+    toplevel bool
     outputdir string
     outputdir_set bool
     append_rules map[string] string
@@ -685,6 +686,16 @@ func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
 }
 
 //
+func check_type(vlist []Variable) string {
+    for _,v := range vlist {
+        if v.Name == "default_type" {
+            return v.Value
+        }
+    }
+    return "default"
+}
+
+//
 func get_variable(info BuildInfo,v Variable) (string, bool) {
     if v.Type != "" && v.Type != target_type {
         return "",false
@@ -754,6 +765,10 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
     info.select_target = ""
 
+    if toplevel == true && target_type == "default" {
+        target_type = check_type(d.Variable)
+    }
+    toplevel = false
     //
     // get rules
     //
@@ -774,12 +789,6 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
     opt_pre := info.variables["option_prefix"]
     if outputdir_set == false {
-        if target_type == "default" {
-            def_type, dok := info.variables["default_type"]
-            if dok == true {
-                target_type = def_type
-            }
-        }
         outputdir += "/" + target_type + "/"
         if isProduct {
             outputdir += "Product"
@@ -963,7 +972,11 @@ func output_rules(file *os.File) {
     file.WriteString("  deps = gcc\n\n")
     file.WriteString("rule ar\n")
     if useResponse == true {
-        file.WriteString("  command = $ar $options $out @$out.rsp\n")
+        if target_type == "WIN32" {
+            file.WriteString("  command = $ar $options /out:$out @$out.rsp\n")
+        } else {
+            file.WriteString("  command = $ar $options $out @$out.rsp\n")
+        }
         file.WriteString("  description = Archive: $desc\n")
         file.WriteString("  rspfile = $out.rsp\n")
         file.WriteString("  rspfile_content = $in\n\n")
@@ -1128,6 +1141,7 @@ func main() {
     }
     outputdir_set = false
     useResponse = false
+    toplevel = true
 
     ra := flag.Args()
     if len(ra) > 0 && target_name == "" {
