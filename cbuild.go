@@ -29,6 +29,8 @@ type StringList struct {
     Target string
     Debug []string `yaml:",flow"`
     Release []string `yaml:",flow"`
+    Develop []string `yaml:",flow"`
+    Product []string `yaml:",flow"`
     List []string `yaml:",flow"`
 }
 type Variable struct {
@@ -51,6 +53,7 @@ type Other struct {
     Command string
     Description string
     Need_Depend bool
+    Type string
     Option []StringList `yaml:",flow"`
 }
 
@@ -145,6 +148,7 @@ type BuildInfo struct {
     target string
     outputdir string
     subdir []string
+    mydir string
 }
 
 //
@@ -153,6 +157,8 @@ type BuildInfo struct {
 var (
     isDebug bool
     isRelease bool
+    isProduct bool
+    isDevelop bool
     target_type string
     target_name string
     outputdir string
@@ -187,8 +193,16 @@ func getList(block []StringList,target_name string) []string {
                 for _,d := range i.Debug {
                     lists = append(lists,d)
                 }
-            } else {
+            } else if isDevelop == true {
+                for _,r := range i.Develop {
+                    lists = append(lists,r)
+                }
+            } else if isRelease == true {
                 for _,r := range i.Release {
+                    lists = append(lists,r)
+                }
+            } else if isProduct == true {
+                for _,r := range i.Product {
                     lists = append(lists,r)
                 }
             }
@@ -380,7 +394,7 @@ func replace_variable(info BuildInfo,str string,start int,no_error bool) (string
     for _,s := range src {
         br := strings.Index(s,"}")
         if br == -1 {
-            e := MyError{ str: "variable not close ${name}. \"${"+s+"\"" }
+            e := MyError{ str: "variable not close ${name}. \"${"+s+"\" in ["+info.mydir+"make.yml]." }
             return "",e
         }
         vname := s[:br]
@@ -389,7 +403,7 @@ func replace_variable(info BuildInfo,str string,start int,no_error bool) (string
             if no_error {
                 v = ""
             } else {
-                e := MyError{ str: "variable <"+vname+"> is not found." }
+                e := MyError{ str: "variable <"+vname+"> is not found in ["+info.mydir+"make.yml]." }
                 return "",e
             }
         }
@@ -599,7 +613,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
                 }
                 other_rule_file_list = append(other_rule_file_list,ocmd)
             } else {
-                fmt.Println("compiler:",rule.compiler,"is not found.")
+                fmt.Println("compiler:",rule.compiler,"is not found. in ["+info.mydir+"make.yml].")
             }
         }
     }
@@ -612,6 +626,10 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
 //
 func create_other_rules(info BuildInfo,olist []Other,opt_pre string) error {
     for _, ot := range olist {
+        if ot.Type != "" && ot.Type != target_type {
+            continue
+        }
+
         ext := ot.Ext
 
         olist := []string{}
@@ -679,6 +697,10 @@ func get_variable(info BuildInfo,v Variable) (string, bool) {
             return "",false
         } else if isRelease && v.Build != "Release" && v.Build != "release" {
             return "",false
+        } else if isDevelop && v.Build != "Develop" && v.Build != "develop" {
+            return "",false
+        } else if isProduct && v.Build != "Product" && v.Build != "product" {
+            return "",false
         }
     }
     return v.Value,true
@@ -716,6 +738,7 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         return result,e
     }
 
+    info.mydir = loaddir
     //
     // select target
     //
@@ -751,12 +774,18 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     }
     opt_pre := info.variables["option_prefix"]
     if outputdir_set == false {
-        def_type, dok := info.variables["default_type"]
-        if dok == true {
-            target_type = def_type
+        if target_type == "default" {
+            def_type, dok := info.variables["default_type"]
+            if dok == true {
+                target_type = def_type
+            }
         }
         outputdir += "/" + target_type + "/"
-        if isRelease {
+        if isProduct {
+            outputdir += "Product"
+        } else if isDevelop {
+            outputdir += "Develop"
+        } else if isRelease {
             outputdir += "Release"
         } else {
             outputdir += "Debug"
@@ -780,6 +809,9 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
                 result.success = false
                 return result,err
             }
+        }
+        if strings.Index(i," ") != -1 {
+            i = "\""+i+"\""
         }
         info.includes = append(info.includes,opt_pre + "I" + filepath.ToSlash(i))
     }
@@ -921,7 +953,11 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
 func output_rules(file *os.File) {
     file.WriteString("builddir = "+outputdir+"\n\n")
     file.WriteString("rule compile\n")
-    file.WriteString("  command = $compile $options -o $out $in\n")
+    if target_type == "WIN32" {
+        file.WriteString("  command = $compile $options -Fo$out $in\n")
+    } else {
+        file.WriteString("  command = $compile $options -o $out $in\n")
+    }
     file.WriteString("  description = Compile: $desc\n")
     file.WriteString("  depfile = $depf\n")
     file.WriteString("  deps = gcc\n\n")
@@ -1068,6 +1104,8 @@ func main() {
     flag.BoolVar(&verboseMode,"v",false,"verbose mode")
     flag.BoolVar(&isRelease,"release",false,"release build")
     flag.BoolVar(&isDebug,"debug",true,"debug build")
+    flag.BoolVar(&isDevelop,"develop",false,"release build")
+    flag.BoolVar(&isProduct,"product",false,"release build")
     flag.StringVar(&target_type,"type","default","build target type")
     flag.StringVar(&target_name,"t","","build target name")
     flag.StringVar(&outputdir,"o","build","build directory")
@@ -1076,7 +1114,16 @@ func main() {
     flag.StringVar(&projname,"msbuild-proj","out","MSBuild project name")
     flag.Parse()
 
+    if isDevelop {
+        isDebug = false
+    }
     if isRelease {
+        isDevelop = false
+        isDebug = false
+    }
+    if isProduct {
+        isRelease = false
+        isDevelop = false
         isDebug = false
     }
     outputdir_set = false
