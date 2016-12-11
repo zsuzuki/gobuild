@@ -967,12 +967,14 @@ func output_rules(file *os.File) {
     file.WriteString("rule compile\n")
     if target_type == "WIN32" {
         file.WriteString("  command = $compile $options -Fo$out $in\n")
+        file.WriteString("  description = Compile: $desc\n")
+        file.WriteString("  deps = msvc\n\n")
     } else {
         file.WriteString("  command = $compile $options -o $out $in\n")
+        file.WriteString("  description = Compile: $desc\n")
+        file.WriteString("  depfile = $depf\n")
+        file.WriteString("  deps = gcc\n\n")
     }
-    file.WriteString("  description = Compile: $desc\n")
-    file.WriteString("  depfile = $depf\n")
-    file.WriteString("  deps = gcc\n\n")
     file.WriteString("rule ar\n")
     if useResponse == true {
         if target_type == "WIN32" {
