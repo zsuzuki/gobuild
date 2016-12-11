@@ -986,7 +986,11 @@ func output_rules(file *os.File) {
     }
     file.WriteString("rule link\n")
     if useResponse == true {
-        file.WriteString("  command = $link $options -o $out @$out.rsp\n")
+        if target_type == "WIN32" {
+            file.WriteString("  command = $link $options /out:$out @$out.rsp\n")
+        } else {
+            file.WriteString("  command = $link $options -o $out @$out.rsp\n")
+        }
         file.WriteString("  description = Link: $desc\n")
         file.WriteString("  rspfile = $out.rsp\n")
         file.WriteString("  rspfile_content = $in\n\n")
