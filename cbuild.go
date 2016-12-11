@@ -315,8 +315,7 @@ func create_convert(info BuildInfo,loaddir string,create_list []string,target_na
 // option
 //
 func append_option(info BuildInfo,lists []string,opt string,opt_pre string) ([]string, error) {
-    sl := strings.Split(opt," ")
-    sl[0] = opt_pre+sl[0]
+    sl := strings.Split(opt_pre+opt," ")
     for _,so := range sl {
         si := strings.Index(so,"${")
         if si != -1 {
@@ -325,6 +324,9 @@ func append_option(info BuildInfo,lists []string,opt string,opt_pre string) ([]s
             if e != nil {
                 return lists,e
             }
+        }
+        if strings.Index(so," ") != -1 {
+            so = "\""+so+"\""
         }
         lists = append(lists,so)
     }
@@ -445,6 +447,15 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
             deps := []string{}
             _,af := append_rules[mycmd]
             if af == false {
+                ev := strings.Index(ur,"${")
+                if ev != -1 {
+                    var e error
+                    ur,e = replace_variable(info,ur,ev,false)
+                    if e != nil {
+                        return e
+                    }
+                }
+
                 if ur[0] == '$' {
                     r, d := replace_path(ur,info.outputdir)
                     abs,_ := filepath.Abs(d)
@@ -457,14 +468,6 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                     ur = r
                 }
                 ur = strings.Replace(ur,"$target",info.target,-1)
-                ev := strings.Index(ur,"${")
-                if ev != -1 {
-                    var e error
-                    ur,e = replace_variable(info,ur,ev,false)
-                    if e != nil {
-                        return e
-                    }
-                }
                 append_rules[mycmd] = ur
             }
 
