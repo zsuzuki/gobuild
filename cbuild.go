@@ -412,6 +412,14 @@ func replace_variable(info BuildInfo,str string,start int,no_error bool) (string
         }
         ret += v + s[br+1:]
     }
+    retv := strings.Index(ret,"${")
+    if retv != -1 {
+        var e error
+        ret,e = replace_variable(info,ret,retv,false)
+        if e != nil {
+            return "",e
+        }
+    }
     return ret,nil
 }
 
