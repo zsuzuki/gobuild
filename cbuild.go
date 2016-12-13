@@ -447,6 +447,7 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
             deps := []string{}
             _,af := append_rules[mycmd]
             if af == false {
+                ur = strings.Replace(ur,"${selfdir}",loaddir,-1)
                 ev := strings.Index(ur,"${")
                 if ev != -1 {
                     var e error
@@ -487,7 +488,7 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                     need_cmd_alias : false }
                 command_list = append(command_list,cmd)
             } else {
-                ext := filepath.Ext(p.Name)
+                ext := p.Name[1:]//filepath.Ext(p.Name)
                 for _,src := range srlist {
                     dst := filepath.Base(src)
                     next := filepath.Ext(src)
