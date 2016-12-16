@@ -1020,7 +1020,11 @@ func output_rules(file *os.File) {
         }
         file.WriteString("  description = Link: $desc\n")
         file.WriteString("  rspfile = $out.rsp\n")
-        file.WriteString("  rspfile_content = $in\n\n")
+        if responseNewline == true {
+            file.WriteString("  rspfile_content = $in_newline\n\n")
+        } else {
+            file.WriteString("  rspfile_content = $in\n\n")
+        }
     } else {
         file.WriteString("  command = $link $options -o $out $in\n")
         file.WriteString("  description = Link: $desc\n\n")
