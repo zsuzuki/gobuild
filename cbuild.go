@@ -45,6 +45,7 @@ type Build struct {
     Command string
     Target string
     Type string
+    Deps string
     Source []StringList `yaml:",flow"`
 }
 
@@ -114,6 +115,12 @@ type OtherRuleFile struct {
     depend string
 }
 
+type AppendBuild struct {
+    command string
+    desc string
+    deps bool
+}
+
 //
 type BuildCommand struct {
     cmd string
@@ -164,7 +171,7 @@ var (
     toplevel bool
     outputdir string
     outputdir_set bool
-    append_rules map[string] string
+    append_rules map[string] AppendBuild
     other_rule_list map[string] OtherRule
 
     command_list []BuildCommand
@@ -478,7 +485,15 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                     ur = r
                 }
                 ur = strings.Replace(ur,"$target",info.target,-1)
-                append_rules[mycmd] = ur
+                use_deps := false
+                if p.Deps != "" {
+                    use_deps = true
+                }
+                ab := AppendBuild{
+                    command : ur,
+                    desc : p.Command,
+                    deps : use_deps }
+                append_rules[mycmd] = ab
             }
 
             if p.Name[0] != '$' || strings.HasPrefix(p.Name,"$target/") {
@@ -1049,8 +1064,11 @@ func output_rules(file *os.File) {
     // appended original rules.
     for ar,arv := range append_rules {
         file.WriteString("rule "+ar+"\n")
-        file.WriteString("  command = "+arv+"\n")
-        file.WriteString("  description = "+ar+": $desc\n\n")
+        file.WriteString("  command = "+arv.command+"\n")
+        if arv.deps == true {
+            file.WriteString("  deps = $out.d\n")
+        }
+        file.WriteString("  description = "+arv.desc+": $desc\n\n")
     }
 
     file.WriteString("build always: phony\n\n")
@@ -1184,7 +1202,7 @@ func main() {
         target_name = ra[0]
     }
 
-    append_rules = map[string] string{}
+    append_rules = map[string] AppendBuild{}
     command_list = []BuildCommand{}
     other_rule_list = map[string] OtherRule{}
     other_rule_file_list = []OtherRuleFile{}
