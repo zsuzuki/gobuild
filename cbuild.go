@@ -800,6 +800,11 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     //
     // get rules
     //
+    newvar := map[string] string{}
+    for ik,iv := range info.variables {
+        newvar[ik] = iv
+    }
+    info.variables = newvar
     for _,v := range d.Variable {
         val,ok := get_variable(info,v)
         if ok {
@@ -1066,7 +1071,8 @@ func output_rules(file *os.File) {
         file.WriteString("rule "+ar+"\n")
         file.WriteString("  command = "+arv.command+"\n")
         if arv.deps == true {
-            file.WriteString("  deps = $out.d\n")
+            file.WriteString("  depfile = $out.d\n")
+            file.WriteString("  deps = gcc\n")
         }
         file.WriteString("  description = "+arv.desc+": $desc\n\n")
     }

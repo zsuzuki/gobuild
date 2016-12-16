@@ -8,6 +8,9 @@ variable:
   value: ${tool_path}clang++
 - name: archiver
   value: ${tool_path}ar
+- name: archiver
+  value: ${tool_path}llvm-ar
+  type: winclang
 - name: linker
   value: ${tool_path}clang++
 - name: compiler.c
@@ -15,6 +18,8 @@ variable:
 
 - name: execute_suffix
   value: .elf
+- name: tool_suffix
+  value: .exe
 
 # for windows clang
 - name: tool_path
@@ -26,7 +31,16 @@ variable:
   value: $txt2c -o $out $in
 # test2c tool build
 - name: txt2c_go
-  value: go build -o $out $in
+  value: go build -o $out${tool_suffix} $in
+
+- name: VC_PATH
+  value: c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC
+- name: MS_SDK
+  value: c:/Program Files (x86)/Microsoft SDKs/Windows/v7.1A
+- name: WK_PATH
+  value: c:/Program Files (x86)/Windows Kits/10
+- name: WK_VERSION
+  value: 10.0.14393.0/ucrt
 
 # not default rules
 other:
@@ -44,9 +58,9 @@ include:
 - list: [ ./include, ./data ]
 - type: winclang
   list:
-  - c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include
-  - C:/Program Files (x86)/Windows Kits/10/Include/10.0.10240.0/ucrt
-  - C:/Program Files/Microsoft SDKs/Windows/v6.0A/Include
+  - ${VC_PATH}/include
+  - ${WK_PATH}/Include/${WK_VERSION}
+  - ${MS_SDK}/Include
 
 # option settings
 option:
@@ -71,9 +85,9 @@ link_option:
   list:
   - v
   - static
-  - LC:/Program Files/Microsoft SDKs/Windows/v6.0A/Lib
-  - LC:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64
-  - LC:/Program Files (x86)/Windows Kits/10/Lib/10.0.10240.0/ucrt/x64
+  - L${VC_PATH}/lib
+  - L${WK_PATH}/Lib/${WK_VERSION}/x86
+  - L${MS_SDK}/Lib
   - lstdc++
 
 # source file list
