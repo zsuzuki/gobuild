@@ -172,6 +172,7 @@ var (
 
     verboseMode bool
     useResponse bool
+    responseNewline bool
 )
 
 //
@@ -795,6 +796,14 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
                 } else {
                     fmt.Println(" warning: link_response value [",v.Value,"] is unsupport(true/false)")
                 }
+            } else if v.Name == "response_newline" {
+                if val == "true" {
+                    responseNewline = true
+                } else if val == "false" {
+                    responseNewline = false
+                } else {
+                    fmt.Println(" warning: link_response value [",v.Value,"] is unsupport(true/false)")
+                }
             }
             info.variables[v.Name] = val
         }
@@ -993,7 +1002,11 @@ func output_rules(file *os.File) {
         }
         file.WriteString("  description = Archive: $desc\n")
         file.WriteString("  rspfile = $out.rsp\n")
-        file.WriteString("  rspfile_content = $in\n\n")
+        if responseNewline == true {
+            file.WriteString("  rspfile_content = $in_newline\n")
+        } else {
+            file.WriteString("  rspfile_content = $in\n")
+        }
     } else {
         file.WriteString("  command = $ar $options $out $in\n")
         file.WriteString("  description = Archive: $desc\n\n")
@@ -1160,6 +1173,7 @@ func main() {
     outputdir_set = false
     useResponse = false
     toplevel = true
+    responseNewline = false
 
     ra := flag.Args()
     if len(ra) > 0 && target_name == "" {
