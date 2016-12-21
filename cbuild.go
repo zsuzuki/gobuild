@@ -849,15 +849,17 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
     for _,i := range getList(d.Include,info.target) {
         if strings.HasPrefix(i,"$output") {
             i = filepath.Clean(info.outputdir + "output" + i[7:])
-        } else if filepath.IsAbs(i) == false {
-            i = filepath.Clean(loaddir + i)
-        }
-        ii := strings.Index(i,"${")
-        if ii != -1 {
-            i,err = replace_variable(info,i,ii,false)
-            if err != nil {
-                result.success = false
-                return result,err
+        } else {
+            ii := strings.Index(i,"${")
+            if ii != -1 {
+                i,err = replace_variable(info,i,ii,false)
+                if err != nil {
+                    result.success = false
+                    return result,err
+                }
+            }
+            if filepath.IsAbs(i) == false {
+                i = filepath.Clean(loaddir + i)
             }
         }
         if strings.Index(i," ") != -1 {
