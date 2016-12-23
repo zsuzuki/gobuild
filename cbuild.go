@@ -30,6 +30,7 @@ type StringList struct {
     Debug []string `yaml:",flow"`
     Release []string `yaml:",flow"`
     Develop []string `yaml:",flow"`
+    DevelopRelease []string `yaml:",flow"`
     Product []string `yaml:",flow"`
     List []string `yaml:",flow"`
 }
@@ -166,6 +167,7 @@ var (
     isRelease bool
     isProduct bool
     isDevelop bool
+    isDevelopRelease bool
     target_type string
     target_name string
     toplevel bool
@@ -210,6 +212,10 @@ func getList(block []StringList,target_name string) []string {
                 for _,r := range i.Release {
                     lists = append(lists,r)
                 }
+            } else if isDevelopRelease == true {
+                for _,r := range i.DevelopRelease {
+                    lists = append(lists,r)
+                }
             } else if isProduct == true {
                 for _,r := range i.Product {
                     lists = append(lists,r)
@@ -237,7 +243,7 @@ func create_archive(info BuildInfo,create_list []string,target_name string) (str
     avi := strings.Index(archiver,"${")
     if avi != -1 {
         var e error
-        archiver,e = replace_variable(info,archiver,avi,true)
+        archiver,e = replace_variable(info,archiver,avi,true,0)
         if e != nil {
             return "",e
         }
@@ -270,7 +276,7 @@ func create_link(info BuildInfo,create_list []string,target_name string) error {
     lvi := strings.Index(linker,"${")
     if lvi != -1 {
         var e error
-        linker,e = replace_variable(info,linker,lvi,true)
+        linker,e = replace_variable(info,linker,lvi,true,0)
         if e != nil {
             return e
         }
@@ -328,7 +334,7 @@ func append_option(info BuildInfo,lists []string,opt string,opt_pre string) ([]s
         si := strings.Index(so,"${")
         if si != -1 {
             var e error
-            so,e = replace_variable(info,so,si,false)
+            so,e = replace_variable(info,so,si,false,0)
             if e != nil {
                 return lists,e
             }
@@ -399,7 +405,7 @@ func replace_path(value string,add_dir string) (string, string) {
 }
 
 //
-func replace_variable(info BuildInfo,str string,start int,no_error bool) (string, error) {
+func replace_variable(info BuildInfo,str string,start int,no_error bool,nest int) (string, error) {
     src := strings.Split(str[start+2:],"${")
     ret := str[:start]
     for _,s := range src {
@@ -423,8 +429,13 @@ func replace_variable(info BuildInfo,str string,start int,no_error bool) (string
     retv := strings.Index(ret,"${")
     if retv != -1 {
         var e error
-        ret,e = replace_variable(info,ret,retv,false)
-        if e != nil {
+        if nest < 8 {
+            ret,e = replace_variable(info,ret,retv,no_error,nest + 1)
+            if e != nil {
+                return "",e
+            }
+        } else {
+            e = MyError{ str: "variable<"+ret+"> nest is too deep." }
             return "",e
         }
     }
@@ -467,7 +478,7 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                 ev := strings.Index(ur,"${")
                 if ev != -1 {
                     var e error
-                    ur,e = replace_variable(info,ur,ev,false)
+                    ur,e = replace_variable(info,ur,ev,true,0)
                     if e != nil {
                         return e
                     }
@@ -546,7 +557,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
     compiler := info.variables["compiler"]
     cvi := strings.Index(compiler,"${")
     if cvi != -1 {
-        compiler,e = replace_variable(info,compiler,cvi,true)
+        compiler,e = replace_variable(info,compiler,cvi,true,0)
         if e != nil {
             return []string{},e
         }
@@ -623,7 +634,7 @@ func compile_files(info BuildInfo,objdir string,loaddir string,files []string) (
                 cvi = strings.Index(compiler,"${")
                 if cvi != -1 {
                     var e error
-                    compiler,e = replace_variable(info,compiler,cvi,true)
+                    compiler,e = replace_variable(info,compiler,cvi,true,0)
                     if e != nil {
                         return []string{},e
                     }
@@ -738,6 +749,8 @@ func get_variable(info BuildInfo,v Variable) (string, bool) {
             return "",false
         } else if isDevelop && v.Build != "Develop" && v.Build != "develop" {
             return "",false
+        } else if isDevelopRelease && v.Build != "DevelopRelease" && v.Build != "develop_release" {
+            return "",false
         } else if isProduct && v.Build != "Product" && v.Build != "product" {
             return "",false
         }
@@ -835,6 +848,8 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
             outputdir += "Product"
         } else if isDevelop {
             outputdir += "Develop"
+        } else if isDevelop {
+            outputdir += "DevelopRelease"
         } else if isRelease {
             outputdir += "Release"
         } else {
@@ -850,15 +865,16 @@ func build(info BuildInfo,pathname string) (result BuildResult,err error) {
         if strings.HasPrefix(i,"$output") {
             i = filepath.Clean(info.outputdir + "output" + i[7:])
         } else {
+            use_rel := (i[0] == '$')
             ii := strings.Index(i,"${")
             if ii != -1 {
-                i,err = replace_variable(info,i,ii,false)
+                i,err = replace_variable(info,i,ii,false,0)
                 if err != nil {
                     result.success = false
                     return result,err
                 }
             }
-            if filepath.IsAbs(i) == false {
+            if use_rel == false && filepath.IsAbs(i) == false {
                 i = filepath.Clean(loaddir + i)
             }
         }
@@ -1178,8 +1194,9 @@ func main() {
     flag.BoolVar(&verboseMode,"v",false,"verbose mode")
     flag.BoolVar(&isRelease,"release",false,"release build")
     flag.BoolVar(&isDebug,"debug",true,"debug build")
-    flag.BoolVar(&isDevelop,"develop",false,"release build")
-    flag.BoolVar(&isProduct,"product",false,"release build")
+    flag.BoolVar(&isDevelop,"develop",false,"develop(beta) build")
+    flag.BoolVar(&isDevelopRelease,"develop_release",false,"develop(beta) release build")
+    flag.BoolVar(&isProduct,"product",false,"for production build")
     flag.StringVar(&target_type,"type","default","build target type")
     flag.StringVar(&target_name,"t","","build target name")
     flag.StringVar(&outputdir,"o","build","build directory")
@@ -1191,11 +1208,17 @@ func main() {
     if isDevelop {
         isDebug = false
     }
+    if isDevelopRelease {
+        isDevelop = false
+        isDebug = false
+    }
     if isRelease {
+        isDevelopRelease = false;
         isDevelop = false
         isDebug = false
     }
     if isProduct {
+        isDevelopRelease = false;
         isRelease = false
         isDevelop = false
         isDebug = false
