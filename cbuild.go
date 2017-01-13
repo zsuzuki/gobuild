@@ -182,6 +182,8 @@ var (
     verboseMode bool
     useResponse bool
     responseNewline bool
+
+    build_ninja_name string
 )
 
 //
@@ -1104,9 +1106,9 @@ func output_rules(file *os.File) {
 //
 func outputNinja() {
     if verboseMode == true {
-        fmt.Println("output build.ninja")
+        fmt.Println("output "+build_ninja_name)
     }
-    file,err := os.Create("build.ninja")
+    file,err := os.Create(build_ninja_name)
     if err != nil {
         fmt.Println("gobuild: error:",err.Error())
         os.Exit(1)
@@ -1200,6 +1202,7 @@ func main() {
     flag.StringVar(&target_type,"type","default","build target type")
     flag.StringVar(&target_name,"t","","build target name")
     flag.StringVar(&outputdir,"o","build","build directory")
+    flag.StringVar(&build_ninja_name,"f","build.ninja","output build.ninja filename")
     flag.BoolVar(&msbuild,"msbuild",false,"Export MSBuild project")
     flag.StringVar(&projdir,"msbuild-dir","./","MSBuild project output directory")
     flag.StringVar(&projname,"msbuild-proj","out","MSBuild project name")
