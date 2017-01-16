@@ -464,6 +464,14 @@ func create_prebuild(info BuildInfo,loaddir string,plist []Build) error {
                 } else if src == "always" {
                     srlist[i] = src+"|"
                 } else {
+                    six := strings.Index(src,"${")
+                    if six != -1 {
+                        var e error
+                        src,e = replace_variable(info,src,six,true,0)
+                        if e != nil {
+                            return e
+                        }
+                    }
                     srlist[i] = filepath.ToSlash(filepath.Clean(loaddir+src))
                 }
             }
