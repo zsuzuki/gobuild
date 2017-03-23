@@ -21,16 +21,22 @@ import (
 //
 // data structures
 //
+
+// Packager make.yml package information
 type Packager struct {
 	Target string
 	Option string
 }
+
+// Target make.yml target file information
 type Target struct {
 	Name      string
 	Type      string
 	By_Target string
 	Packager  Packager
 }
+
+// StringList make.yml string list('- list: ...')
 type StringList struct {
 	Type           string
 	Target         string
@@ -41,6 +47,8 @@ type StringList struct {
 	Product        []string `yaml:",flow"`
 	List           []string `yaml:",flow"`
 }
+
+// Variable make.yml variable section
 type Variable struct {
 	Name   string
 	Value  string
@@ -48,6 +56,8 @@ type Variable struct {
 	Target string
 	Build  string
 }
+
+// Build in directory source list
 type Build struct {
 	Name    string
 	Command string
@@ -57,15 +67,17 @@ type Build struct {
 	Source  []StringList `yaml:",flow"`
 }
 
+// Other make.yml other section
 type Other struct {
-	Ext         string
-	Command     string
-	Description string
-	Need_Depend bool
-	Type        string
-	Option      []StringList `yaml:",flow"`
+	Ext           string
+	Command       string
+	Description   string
+	needDependend bool
+	Type          string
+	Option        []StringList `yaml:",flow"`
 }
 
+// Data format make.yml top structure
 type Data struct {
 	Target         []Target     `yaml:",flow"`
 	Include        []StringList `yaml:",flow"`
@@ -89,6 +101,7 @@ type Data struct {
 // error
 //
 
+// MyError is override error in application
 type MyError struct {
 	str string
 }
@@ -101,18 +114,19 @@ func (m MyError) Error() string {
 // build information
 //
 
-//
+// OtherRule is not default target(ex. .bin .dat ...) rule
 type OtherRule struct {
-	compiler string
-	cmd      string
-	title    string
-	option   []string
-	need_inc bool
-	need_opt bool
-	need_def bool
-	need_dep bool
+	compiler    string
+	cmd         string
+	title       string
+	option      []string
+	needInclude bool
+	needOption  bool
+	needDefine  bool
+	needDepend  bool
 }
 
+// OtherRuleFile is not default target(ex. .bin .dat ...) file information
 type OtherRuleFile struct {
 	rule     string
 	compiler string
@@ -124,13 +138,14 @@ type OtherRuleFile struct {
 	depend   string
 }
 
+// AppendBuild ...
 type AppendBuild struct {
 	command string
 	desc    string
 	deps    bool
 }
 
-//
+// BuildCommand is command set for one target file
 type BuildCommand struct {
 	cmd          string
 	cmdtype      string
@@ -143,30 +158,30 @@ type BuildCommand struct {
 	needCmdAlias bool
 }
 
-//
+// BuildResult is result by build(in directory)
 type BuildResult struct {
 	success    bool
 	createList []string
 }
 
-//
+// BuildInfo is build information in directory
 type BuildInfo struct {
-	variables       map[string]string
-	includes        []string
-	defines         []string
-	options         []string
-	archive_options []string
-	convert_options []string
-	link_options    []string
-	link_depends    []string
-	libraries       []string
-	package_target  string
-	package_command string
-	select_target   string
-	target          string
-	outputdir       string
-	subdir          []string
-	mydir           string
+	variables      map[string]string
+	includes       []string
+	defines        []string
+	options        []string
+	archiveOptions []string
+	convertOptions []string
+	linkOptions    []string
+	linkDepends    []string
+	libraries      []string
+	packageTarget  string
+	packageCommand string
+	selectTarget   string
+	target         string
+	outputdir      string
+	subdir         []string
+	mydir          string
 }
 
 //
@@ -177,26 +192,24 @@ const (
 )
 
 var (
-	isDebug          bool
-	isRelease        bool
-	isProduct        bool
-	isDevelop        bool
-	isDevelopRelease bool
-	target_type      string
-	target_name      string
-	toplevel         bool
-	outputdir        string
-	outputdir_set    bool
-	append_rules     map[string]AppendBuild
-	other_rule_list  map[string]OtherRule
-
-	command_list         []BuildCommand
-	other_rule_file_list []OtherRuleFile
-
-	verboseMode     bool
-	useResponse     bool
-	responseNewline bool
-	buildNinjaName  string
+	isDebug           bool
+	isRelease         bool
+	isProduct         bool
+	isDevelop         bool
+	isDevelopRelease  bool
+	targetType        string
+	targetName        string
+	toplevel          bool
+	outputdir         string
+	outputdirSet      bool
+	appendRules       map[string]AppendBuild
+	otherRuleList     map[string]OtherRule
+	commandList       []BuildCommand
+	otherRuleFileList []OtherRuleFile
+	verboseMode       bool
+	useResponse       bool
+	responseNewline   bool
+	buildNinjaName    string
 )
 
 //
@@ -208,10 +221,10 @@ var (
 //
 //
 //
-func getList(block []StringList, target_name string) []string {
+func getList(block []StringList, targetName string) []string {
 	lists := []string{}
 	for _, i := range block {
-		if (i.Type == "" || i.Type == target_type) && (i.Target == "" || i.Target == target_name) {
+		if (i.Type == "" || i.Type == targetType) && (i.Target == "" || i.Target == targetName) {
 			for _, l := range i.List {
 				lists = append(lists, l)
 			}
@@ -278,13 +291,13 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 //
 // archive objects
 //
-func createArchive(info BuildInfo, createList []string, target_name string) (string, error) {
+func createArchive(info BuildInfo, createList []string, targetName string) (string, error) {
 
 	arname := info.outputdir
-	if target_type == "WIN32" {
-		arname += target_name + ".lib"
+	if targetType == "WIN32" {
+		arname += targetName + ".lib"
 	} else {
-		arname += "lib" + target_name + ".a"
+		arname += "lib" + targetName + ".a"
 	}
 	arname = filepath.ToSlash(filepath.Clean(arname))
 
@@ -296,11 +309,11 @@ func createArchive(info BuildInfo, createList []string, target_name string) (str
 	cmd := BuildCommand{
 		cmd:          archiver,
 		cmdtype:      "ar",
-		args:         info.archive_options,
+		args:         info.archiveOptions,
 		infiles:      createList,
 		outfile:      arname,
 		needCmdAlias: true}
-	command_list = append(command_list, cmd)
+	commandList = append(commandList, cmd)
 
 	return arname, nil
 }
@@ -308,8 +321,8 @@ func createArchive(info BuildInfo, createList []string, target_name string) (str
 //
 // link objects
 //
-func createLink(info BuildInfo, createList []string, target_name string, packager Packager) error {
-	trname := info.outputdir + target_name
+func createLink(info BuildInfo, createList []string, targetName string, packager Packager) error {
+	trname := info.outputdir + targetName
 	esuf, ok := info.variables["execute_suffix"]
 	if ok {
 		trname += esuf
@@ -322,7 +335,7 @@ func createLink(info BuildInfo, createList []string, target_name string, package
 	}
 
 	options := []string{}
-	for _, lo := range info.link_options {
+	for _, lo := range info.linkOptions {
 		lo = strings.Replace(lo, "$out", trname, -1)
 		options = append(options, lo)
 	}
@@ -335,14 +348,14 @@ func createLink(info BuildInfo, createList []string, target_name string, package
 		args:         options,
 		infiles:      createList,
 		outfile:      trname,
-		depends:      info.link_depends,
+		depends:      info.linkDepends,
 		needCmdAlias: true}
-	command_list = append(command_list, cmd)
+	commandList = append(commandList, cmd)
 	//fmt.Println("-o " + NowTarget.Name + flist)
 
 	if packager.Target != "" {
 		// package
-		pkgname := filepath.ToSlash(filepath.Clean(outputdir + "/" + target_name + "/" + packager.Target))
+		pkgname := filepath.ToSlash(filepath.Clean(outputdir + "/" + targetName + "/" + packager.Target))
 		pkgr, e := getReplacedVariable(info, "packager")
 		if e != nil {
 			return e
@@ -358,7 +371,7 @@ func createLink(info BuildInfo, createList []string, target_name string, package
 			infiles:      []string{trname},
 			outfile:      pkgname,
 			needCmdAlias: true}
-		command_list = append(command_list, pkg)
+		commandList = append(commandList, pkg)
 	}
 	return nil
 }
@@ -366,8 +379,8 @@ func createLink(info BuildInfo, createList []string, target_name string, package
 //
 // convert objects
 //
-func createConvert(info BuildInfo, loaddir string, createList []string, target_name string) {
-	cvname := info.outputdir + target_name
+func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
+	cvname := info.outputdir + targetName
 	cvname = filepath.ToSlash(filepath.Clean(cvname))
 	converter := info.variables["converter"]
 
@@ -379,18 +392,18 @@ func createConvert(info BuildInfo, loaddir string, createList []string, target_n
 	cmd := BuildCommand{
 		cmd:          converter,
 		cmdtype:      "convert",
-		args:         info.convert_options,
+		args:         info.convertOptions,
 		infiles:      clist,
 		outfile:      cvname,
 		needCmdAlias: true}
-	command_list = append(command_list, cmd)
+	commandList = append(commandList, cmd)
 }
 
 //
 // option
 //
-func appendOption(info BuildInfo, lists []string, opt string, opt_pre string) ([]string, error) {
-	sl := strings.Split(opt_pre+opt, " ")
+func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
+	sl := strings.Split(optionPrefix+opt, " ")
 	for _, so := range sl {
 		si := strings.Index(so, "${")
 		if si != -1 {
@@ -412,11 +425,11 @@ func appendOption(info BuildInfo, lists []string, opt string, opt_pre string) ([
 // target
 //
 func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
-	if info.select_target != "" {
+	if info.selectTarget != "" {
 		// search target
 		for _, t := range tlist {
-			if info.select_target == t.Name {
-				return t, "_" + info.select_target, true
+			if info.selectTarget == t.Name {
+				return t, "_" + info.selectTarget, true
 			}
 		}
 
@@ -440,22 +453,21 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 			t := tlist[0]
 			if info.target == "" {
 				return t, "_" + t.Name, true
-			} else {
-				return t, "", true
 			}
+			return t, "", true
 		}
 	}
 	return Target{}, "", false
 }
 
 //
-func replacePath(value string, add_dir string) (string, string) {
+func replacePath(value string, addDir string) (string, string) {
 	url := strings.Split(value, " ")
 	ucmd := url[0]
 	if ucmd[0] == '$' {
 		ucmd = ucmd[1:]
 	}
-	p := filepath.ToSlash(filepath.Clean(add_dir + ucmd))
+	p := filepath.ToSlash(filepath.Clean(addDir + ucmd))
 	result := p
 	for i, uu := range url {
 		if i > 0 {
@@ -466,7 +478,7 @@ func replacePath(value string, add_dir string) (string, string) {
 }
 
 //
-func replaceVariable(info BuildInfo, str string, start int, no_error bool, nest int) (string, error) {
+func replaceVariable(info BuildInfo, str string, start int, noError bool, nest int) (string, error) {
 	src := strings.Split(str[start+2:], "${")
 	ret := str[:start]
 	for _, s := range src {
@@ -478,7 +490,7 @@ func replaceVariable(info BuildInfo, str string, start int, no_error bool, nest 
 		vname := s[:br]
 		v, ok := info.variables[vname]
 		if ok == false {
-			if no_error {
+			if noError {
 				v = ""
 			} else {
 				e := MyError{str: "variable <" + vname + "> is not found in [" + info.mydir + "make.yml]."}
@@ -491,7 +503,7 @@ func replaceVariable(info BuildInfo, str string, start int, no_error bool, nest 
 	if retv != -1 {
 		var e error
 		if nest < 8 {
-			ret, e = replaceVariable(info, ret, retv, no_error, nest+1)
+			ret, e = replaceVariable(info, ret, retv, noError, nest+1)
 			if e != nil {
 				return "", e
 			}
@@ -508,7 +520,7 @@ func replaceVariable(info BuildInfo, str string, start int, no_error bool, nest 
 //
 func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 	for _, p := range plist {
-		if (p.Target == "" || p.Target == info.target) && (p.Type == "" || p.Type == target_type) {
+		if (p.Target == "" || p.Target == info.target) && (p.Type == "" || p.Type == targetType) {
 			// regist prebuild
 			srlist := getList(p.Source, info.target)
 			if len(srlist) == 0 {
@@ -541,7 +553,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			}
 			mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(info.outputdir+p.Command)), "/", "_", -1)
 			deps := []string{}
-			_, af := append_rules[mycmd]
+			_, af := appendRules[mycmd]
 			if af == false {
 				ur = strings.Replace(ur, "${selfdir}", loaddir, -1)
 				ev := strings.Index(ur, "${")
@@ -565,15 +577,15 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					ur = r
 				}
 				ur = strings.Replace(ur, "$target", info.target, -1)
-				use_deps := false
+				useDeps := false
 				if p.Deps != "" {
-					use_deps = true
+					useDeps = true
 				}
 				ab := AppendBuild{
 					command: ur,
 					desc:    p.Command,
-					deps:    use_deps}
-				append_rules[mycmd] = ab
+					deps:    useDeps}
+				appendRules[mycmd] = ab
 			}
 
 			if p.Name[0] != '$' || strings.HasPrefix(p.Name, "$target/") {
@@ -590,7 +602,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					infiles:      srlist,
 					outfile:      outfile,
 					needCmdAlias: false}
-				command_list = append(command_list, cmd)
+				commandList = append(commandList, cmd)
 			} else {
 				ext := p.Name[1:] //filepath.Ext(p.Name)
 				for _, src := range srlist {
@@ -610,7 +622,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 						infiles:      []string{src},
 						outfile:      outfile,
 						needCmdAlias: false}
-					command_list = append(command_list, cmd)
+					commandList = append(commandList, cmd)
 				}
 			}
 		}
@@ -662,7 +674,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 			carg = append(carg, ca)
 		}
 		ext := filepath.Ext(f)
-		rule, ok := other_rule_list[ext]
+		rule, ok := otherRuleList[ext]
 		if ok == false {
 			// normal
 			cmd := BuildCommand{
@@ -673,12 +685,12 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 				outfile:      oname,
 				depfile:      dname,
 				needCmdAlias: true}
-			command_list = append(command_list, cmd)
+			commandList = append(commandList, cmd)
 		} else {
 			// custom
 			linc := ""
 			ldef := ""
-			if rule.need_inc == true {
+			if rule.needInclude == true {
 				for _, ii := range info.includes {
 					linc += " " + ii
 				}
@@ -713,10 +725,10 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 					option:   lopt,
 					define:   ldef,
 					depend:   ""}
-				if rule.need_dep == true {
+				if rule.needDepend == true {
 					ocmd.depend = dname
 				}
-				other_rule_file_list = append(other_rule_file_list, ocmd)
+				otherRuleFileList = append(otherRuleFileList, ocmd)
 			} else {
 				fmt.Println("compiler:", rule.compiler, "is not found. in ["+info.mydir+"make.yml].")
 			}
@@ -729,9 +741,9 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 //
 // other rule
 //
-func createOtherRule(info BuildInfo, olist []Other, opt_pre string) error {
+func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 	for _, ot := range olist {
-		if ot.Type != "" && ot.Type != target_type {
+		if ot.Type != "" && ot.Type != targetType {
 			continue
 		}
 
@@ -740,16 +752,16 @@ func createOtherRule(info BuildInfo, olist []Other, opt_pre string) error {
 		olist := []string{}
 		for _, o := range getList(ot.Option, info.target) {
 			var e error
-			olist, e = appendOption(info, olist, o, opt_pre)
+			olist, e = appendOption(info, olist, o, optionPrefix)
 			if e != nil {
 				return e
 			}
 		}
 
-		need_inc := false
-		need_opt := false
-		need_def := false
-		rule, ok := other_rule_list[ext]
+		needInclude := false
+		needOption := false
+		needDefine := false
+		rule, ok := otherRuleList[ext]
 		if ok == false {
 
 			// no exist rule
@@ -763,11 +775,11 @@ func createOtherRule(info BuildInfo, olist []Other, opt_pre string) error {
 				} else if c[0] == '@' {
 					switch c {
 					case "@include":
-						need_inc = true
+						needInclude = true
 					case "@option":
-						need_opt = true
+						needOption = true
 					case "@define":
-						need_def = true
+						needDefine = true
 					}
 					cmdline += " $" + c[1:]
 				} else {
@@ -776,18 +788,18 @@ func createOtherRule(info BuildInfo, olist []Other, opt_pre string) error {
 			}
 
 			rule = OtherRule{
-				compiler: compiler,
-				cmd:      cmdline,
-				title:    ot.Description,
-				option:   olist,
-				need_inc: need_inc,
-				need_opt: need_opt,
-				need_def: need_def,
-				need_dep: ot.Need_Depend}
+				compiler:    compiler,
+				cmd:         cmdline,
+				title:       ot.Description,
+				option:      olist,
+				needInclude: needInclude,
+				needOption:  needOption,
+				needDefine:  needDefine,
+				needDepend:  ot.needDependend}
 		} else {
 			rule.option = append(rule.option, olist...)
 		}
-		other_rule_list[ext] = rule
+		otherRuleList[ext] = rule
 	}
 	return nil
 }
@@ -804,7 +816,7 @@ func checkType(vlist []Variable) string {
 
 //
 func getVariable(info BuildInfo, v Variable) (string, bool) {
-	if v.Type != "" && v.Type != target_type {
+	if v.Type != "" && v.Type != targetType {
 		return "", false
 	}
 	if v.Target != "" && v.Target != info.target {
@@ -839,10 +851,10 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	if verboseMode == true {
 		fmt.Println(pathname + ": start")
 	}
-	my_yaml := loaddir + "make.yml"
-	buf, err := ioutil.ReadFile(my_yaml)
+	myYaml := loaddir + "make.yml"
+	buf, err := ioutil.ReadFile(myYaml)
 	if err != nil {
-		e := MyError{str: my_yaml + ": " + err.Error()}
+		e := MyError{str: myYaml + ": " + err.Error()}
 		result.success = false
 		return result, e
 	}
@@ -850,7 +862,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	var d Data
 	err = yaml.Unmarshal(buf, &d)
 	if err != nil {
-		e := MyError{str: my_yaml + ": " + err.Error()}
+		e := MyError{str: myYaml + ": " + err.Error()}
 		result.success = false
 		return result, e
 	}
@@ -859,7 +871,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	//
 	// select target
 	//
-	NowTarget, objs_suffix, ok := getTarget(info, d.Target)
+	NowTarget, objsSuffix, ok := getTarget(info, d.Target)
 	if ok == false {
 		e := MyError{str: "No Target"}
 		result.success = false
@@ -869,10 +881,10 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		info.target = NowTarget.Name
 		fmt.Println("gobuild: make target: " + info.target)
 	}
-	info.select_target = ""
+	info.selectTarget = ""
 
-	if toplevel == true && target_type == "default" {
-		target_type = checkType(d.Variable)
+	if toplevel == true && targetType == "default" {
+		targetType = checkType(d.Variable)
 	}
 	toplevel = false
 	//
@@ -906,9 +918,9 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			info.variables[v.Name] = val
 		}
 	}
-	opt_pre := info.variables["option_prefix"]
-	if outputdir_set == false {
-		outputdir += "/" + target_type + "/"
+	optionPrefix := info.variables["option_prefix"]
+	if outputdirSet == false {
+		outputdir += "/" + targetType + "/"
 		if isProduct {
 			outputdir += "Product"
 		} else if isDevelop {
@@ -920,17 +932,17 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		} else {
 			outputdir += "Debug"
 		}
-		outputdir_set = true
+		outputdirSet = true
 	}
 
 	info.outputdir = outputdir + "/" + loaddir
-	objdir := outputdir + "/" + loaddir + ".objs" + objs_suffix + "/"
+	objdir := outputdir + "/" + loaddir + ".objs" + objsSuffix + "/"
 
 	for _, i := range getList(d.Include, info.target) {
 		if strings.HasPrefix(i, "$output") {
 			i = filepath.Clean(info.outputdir + "output" + i[7:])
 		} else {
-			use_rel := (i[0] == '$')
+			useRel := (i[0] == '$')
 			ii := strings.Index(i, "${")
 			if ii != -1 {
 				i, err = replaceVariable(info, i, ii, false, 0)
@@ -939,62 +951,62 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 					return result, err
 				}
 			}
-			if use_rel == false && filepath.IsAbs(i) == false {
+			if useRel == false && filepath.IsAbs(i) == false {
 				i = filepath.Clean(loaddir + i)
 			}
 		}
 		if strings.Index(i, " ") != -1 {
 			i = "\"" + i + "\""
 		}
-		info.includes = append(info.includes, opt_pre+"I"+filepath.ToSlash(i))
+		info.includes = append(info.includes, optionPrefix+"I"+filepath.ToSlash(i))
 	}
 	for _, d := range getList(d.Define, info.target) {
-		info.defines = append(info.defines, opt_pre+"D"+d)
+		info.defines = append(info.defines, optionPrefix+"D"+d)
 	}
 	for _, o := range getList(d.Option, info.target) {
-		info.options, err = appendOption(info, info.options, o, opt_pre)
+		info.options, err = appendOption(info, info.options, o, optionPrefix)
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
 	for _, a := range getList(d.Archive_Option, info.target) {
-		info.archive_options, err = appendOption(info, info.archive_options, a, "")
+		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
 	for _, c := range getList(d.Convert_Option, info.target) {
-		info.convert_options, err = appendOption(info, info.convert_options, c, "")
+		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
 	for _, l := range getList(d.Link_Option, info.target) {
-		info.link_options, err = appendOption(info, info.link_options, l, opt_pre)
+		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
 	for _, ls := range getList(d.Libraries, info.target) {
-		info.libraries, err = appendOption(info, info.libraries, ls, opt_pre+"l")
+		info.libraries, err = appendOption(info, info.libraries, ls, optionPrefix+"l")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
 	for _, ld := range getList(d.Link_Depend, info.target) {
-		info.link_depends, err = appendOption(info, info.link_depends, ld, "")
+		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
 
-	err = createOtherRule(info, d.Other, opt_pre)
+	err = createOtherRule(info, d.Other, optionPrefix)
 	if err != nil {
 		return result, err
 	}
@@ -1004,7 +1016,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 
 	// sub-directories
 	subdirs := getList(d.Subdir, info.target)
-	subdir_createList := []string{}
+	subdirCreateList := []string{}
 	for _, s := range subdirs {
 		sd := loaddir + s
 		var r, e = build(info, sd)
@@ -1012,7 +1024,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			return r, e
 		}
 		if len(r.createList) > 0 {
-			subdir_createList = append(subdir_createList, r.createList...)
+			subdirCreateList = append(subdirCreateList, r.createList...)
 		}
 	}
 
@@ -1041,15 +1053,15 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				result.success = false
 				return result, e
 			}
-			result.createList = append(subdir_createList, arname)
-			//fmt.Println(info.archive_options+arname+alist)
+			result.createList = append(subdirCreateList, arname)
+			//fmt.Println(info.archiveOptions+arname+alist)
 		} else {
 			fmt.Println("There are no files to build.", loaddir)
 		}
 	} else if NowTarget.Type == "execute" {
 		// link program
-		if len(createList) > 0 || len(subdir_createList) > 0 {
-			e := createLink(info, append(createList, subdir_createList...), NowTarget.Name, NowTarget.Packager)
+		if len(createList) > 0 || len(subdirCreateList) > 0 {
+			e := createLink(info, append(createList, subdirCreateList...), NowTarget.Name, NowTarget.Packager)
 			if e != nil {
 				result.success = false
 				return result, e
@@ -1064,7 +1076,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			fmt.Println("There are no files to convert.", loaddir)
 		}
 	} else if NowTarget.Type == "passthrough" {
-		result.createList = append(subdir_createList, createList...)
+		result.createList = append(subdirCreateList, createList...)
 	} else {
 		//
 		// other...
@@ -1086,7 +1098,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 func outputRules(file *os.File) {
 	file.WriteString("builddir = " + outputdir + "\n\n")
 	file.WriteString("rule compile\n")
-	if target_type == "WIN32" {
+	if targetType == "WIN32" {
 		file.WriteString("  command = $compile $options -Fo$out $in\n")
 		file.WriteString("  description = Compile: $desc\n")
 		file.WriteString("  deps = msvc\n\n")
@@ -1098,7 +1110,7 @@ func outputRules(file *os.File) {
 	}
 	file.WriteString("rule ar\n")
 	if useResponse == true {
-		if target_type == "WIN32" {
+		if targetType == "WIN32" {
 			file.WriteString("  command = $ar $options /out:$out @$out.rsp\n")
 		} else {
 			file.WriteString("  command = $ar $options $out @$out.rsp\n")
@@ -1116,7 +1128,7 @@ func outputRules(file *os.File) {
 	}
 	file.WriteString("rule link\n")
 	if useResponse == true {
-		if target_type == "WIN32" {
+		if targetType == "WIN32" {
 			file.WriteString("  command = $link $options /out:$out @$out.rsp\n")
 		} else {
 			file.WriteString("  command = $link $options -o $out @$out.rsp\n")
@@ -1140,11 +1152,11 @@ func outputRules(file *os.File) {
 	file.WriteString("  description = Convert: $desc\n\n")
 
 	// other compile rules.
-	for ext, rule := range other_rule_list {
+	for ext, rule := range otherRuleList {
 		file.WriteString("rule compile" + ext[1:] + "\n")
 		file.WriteString("  command = " + rule.cmd + "\n")
 		file.WriteString("  description = " + rule.title + ": $desc\n")
-		if rule.need_dep == true {
+		if rule.needDepend == true {
 			file.WriteString("  depfile = $depf\n")
 			file.WriteString("  deps = gcc\n\n")
 		} else {
@@ -1153,7 +1165,7 @@ func outputRules(file *os.File) {
 	}
 
 	// appended original rules.
-	for ar, arv := range append_rules {
+	for ar, arv := range appendRules {
 		file.WriteString("rule " + ar + "\n")
 		file.WriteString("  command = " + arv.command + "\n")
 		if arv.deps == true {
@@ -1182,7 +1194,7 @@ func outputNinja() {
 	// execute build
 	outputRules(file)
 
-	for _, bs := range command_list {
+	for _, bs := range commandList {
 		file.WriteString("build " + bs.outfile + ": " + bs.cmdtype)
 		for _, f := range bs.infiles {
 			file.WriteString(" $\n  " + f)
@@ -1212,7 +1224,7 @@ func outputNinja() {
 		}
 		file.WriteString("  desc = " + bs.outfile + "\n\n")
 	}
-	for _, oc := range other_rule_file_list {
+	for _, oc := range otherRuleFileList {
 		file.WriteString("build " + oc.outfile + ": " + oc.rule + " " + oc.infile + "\n")
 		file.WriteString("  compiler = " + oc.compiler + "\n")
 		if oc.include != "" {
@@ -1234,7 +1246,7 @@ func outputNinja() {
 func outputMSBuild(outdir, projname string) {
 	var targets []string
 
-	for _, command := range command_list {
+	for _, command := range commandList {
 		if command.cmdtype != "compile" {
 			continue
 		}
@@ -1262,18 +1274,18 @@ func main() {
 	flag.BoolVar(&isDevelop, "develop", false, "develop(beta) build")
 	flag.BoolVar(&isDevelopRelease, "develop_release", false, "develop(beta) release build")
 	flag.BoolVar(&isProduct, "product", false, "for production build")
-	flag.StringVar(&target_type, "type", "default", "build target type")
-	flag.StringVar(&target_name, "t", "", "build target name")
+	flag.StringVar(&targetType, "type", "default", "build target type")
+	flag.StringVar(&targetName, "t", "", "build target name")
 	flag.StringVar(&outputdir, "o", "build", "build directory")
 	flag.StringVar(&buildNinjaName, "f", "build.ninja", "output build.ninja filename")
 	flag.BoolVar(&msbuild, "msbuild", false, "Export MSBuild project")
 	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
 	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
-	disp_version := flag.Bool("version", false, "display version")
+	dispVersion := flag.Bool("version", false, "display version")
 	flag.Parse()
 
 	versionString := cbuildVersion + "(" + runtime.Version() + "/" + runtime.Compiler + ")"
-	if *disp_version {
+	if *dispVersion {
 		fmt.Println(versionString)
 		os.Exit(0)
 	}
@@ -1296,41 +1308,41 @@ func main() {
 		isDevelop = false
 		isDebug = false
 	}
-	outputdir_set = false
+	outputdirSet = false
 	useResponse = false
 	toplevel = true
 	responseNewline = false
 
 	ra := flag.Args()
-	if len(ra) > 0 && target_name == "" {
-		target_name = ra[0]
+	if len(ra) > 0 && targetName == "" {
+		targetName = ra[0]
 	}
 
-	append_rules = map[string]AppendBuild{}
-	command_list = []BuildCommand{}
-	other_rule_list = map[string]OtherRule{}
-	other_rule_file_list = []OtherRuleFile{}
+	appendRules = map[string]AppendBuild{}
+	commandList = []BuildCommand{}
+	otherRuleList = map[string]OtherRule{}
+	otherRuleFileList = []OtherRuleFile{}
 
-	if target_name != "" {
-		fmt.Println("gobuild: make target: " + target_name)
+	if targetName != "" {
+		fmt.Println("gobuild: make target: " + targetName)
 	}
-	build_info := BuildInfo{
-		variables:       map[string]string{"option_prefix": "-"},
-		includes:        []string{},
-		defines:         []string{},
-		options:         []string{},
-		archive_options: []string{},
-		convert_options: []string{},
-		link_options:    []string{},
-		select_target:   target_name,
-		target:          target_name}
-	var r, err = build(build_info, "")
+	buildinfo := BuildInfo{
+		variables:      map[string]string{"option_prefix": "-"},
+		includes:       []string{},
+		defines:        []string{},
+		options:        []string{},
+		archiveOptions: []string{},
+		convertOptions: []string{},
+		linkOptions:    []string{},
+		selectTarget:   targetName,
+		target:         targetName}
+	var r, err = build(buildinfo, "")
 	if r.success == false {
 		fmt.Println("gobuild: error:", err.Error())
 		os.Exit(1)
 	}
 
-	nlen := len(command_list) + len(other_rule_file_list)
+	nlen := len(commandList) + len(otherRuleFileList)
 	if nlen > 0 {
 
 		outputNinja()
