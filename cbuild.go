@@ -94,6 +94,7 @@ type Data struct {
 	Source         []StringList `yaml:",flow"`
 	Convert_List   []StringList `yaml:",flow"`
 	Subdir         []StringList `yaml:",flow"`
+	Tests          []StringList `yaml:",flow"`
 	Other          []Other      `yaml:",flow"`
 }
 
@@ -182,6 +183,7 @@ type BuildInfo struct {
 	outputdir      string
 	subdir         []string
 	mydir          string
+	tests          []string
 }
 
 //
@@ -398,6 +400,35 @@ func createConvert(info BuildInfo, loaddir string, createList []string, targetNa
 		outfile:      cvname,
 		needCmdAlias: true}
 	commandList = append(commandList, cmd)
+}
+
+//
+// unit tests
+//
+func createTest(info BuildInfo, createList []string, loaddir string) error {
+	carg := append(info.includes, info.defines...)
+	for _, ca := range info.options {
+		if ca != "$out" && ca != "$dep" && ca != "$in" && ca != "-c" { // FIXME.
+			carg = append(carg, ca)
+		}
+	}
+	objdir := info.outputdir + ".objs/"
+
+	for _, f := range createList {
+		// first, compile a test driver
+		createList, _ = compileFiles(info, objdir, loaddir, []string{f})
+
+		// then link it as an executable (test_aaa.cpp -> test_aaa)
+		trname := strings.TrimSuffix(f, filepath.Ext(f))
+		esuf, ok := info.variables["execute_suffix"]
+		if ok {
+			trname += esuf
+		}
+		trname = filepath.ToSlash(filepath.Clean(trname))
+		createLink(info, createList, trname, Packager{})
+
+	}
+	return nil
 }
 
 //
@@ -917,9 +948,9 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				}
 			} else if v.Name == "group_archives" {
 				if val == "true" {
-					groupArchives = true;
+					groupArchives = true
 				} else if val == "false" {
-					groupArchives = false;
+					groupArchives = false
 				} else {
 					fmt.Println(" warning: group_archives value [", v.Value, "] is unsupport(true/false)")
 				}
@@ -1022,6 +1053,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 
 	files := getList(d.Source, info.target)
 	cvfiles := getList(d.Convert_List, info.target)
+	testfiles := getList(d.Tests, info.target)
 
 	// sub-directories
 	subdirs := getList(d.Subdir, info.target)
@@ -1086,6 +1118,13 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		}
 	} else if NowTarget.Type == "passthrough" {
 		result.createList = append(subdirCreateList, createList...)
+	} else if NowTarget.Type == "test" {
+		// unit tests
+		e := createTest(info, testfiles, loaddir)
+		if e != nil {
+			result.success = false
+			return result, e
+		}
 	} else {
 		//
 		// other...
