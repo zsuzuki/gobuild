@@ -208,6 +208,7 @@ var (
 	otherRuleFileList []OtherRuleFile
 	verboseMode       bool
 	useResponse       bool
+	groupArchives     bool
 	responseNewline   bool
 	buildNinjaName    string
 )
@@ -914,6 +915,14 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				} else {
 					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
 				}
+			} else if v.Name == "group_archives" {
+				if val == "true" {
+					groupArchives = true;
+				} else if val == "false" {
+					groupArchives = false;
+				} else {
+					fmt.Println(" warning: group_archives value [", v.Value, "] is unsupport(true/false)")
+				}
 			}
 			info.variables[v.Name] = val
 		}
@@ -1141,7 +1150,11 @@ func outputRules(file *os.File) {
 			file.WriteString("  rspfile_content = $in\n\n")
 		}
 	} else {
-		file.WriteString("  command = $link $options -o $out $in\n")
+		if groupArchives == true {
+			file.WriteString("  command = $link $options -o $out -Wl,--start-group $in -Wl,--end-group\n")
+		} else {
+			file.WriteString("  command = $link $options -o $out $in\n")
+		}
 		file.WriteString("  description = Link: $desc\n\n")
 	}
 	file.WriteString("rule packager\n")
@@ -1310,6 +1323,7 @@ func main() {
 	}
 	outputdirSet = false
 	useResponse = false
+	groupArchives = false
 	toplevel = true
 	responseNewline = false
 
