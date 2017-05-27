@@ -96,6 +96,7 @@ type Data struct {
 	Subdir         []StringList `yaml:",flow"`
 	Tests          []StringList `yaml:",flow"`
 	Other          []Other      `yaml:",flow"`
+	SubNinja       []StringList `yaml:",flow"`
 }
 
 //
@@ -213,6 +214,7 @@ var (
 	groupArchives     bool
 	responseNewline   bool
 	buildNinjaName    string
+	subNinjaList      []string
 )
 
 //
@@ -1045,6 +1047,9 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			return result, err
 		}
 	}
+	for _, subninja := range getList(d.SubNinja, info.target) {
+		subNinjaList = append(subNinjaList, subninja)
+	}
 
 	err = createOtherRule(info, d.Other, optionPrefix)
 	if err != nil {
@@ -1290,6 +1295,10 @@ func outputNinja() {
 		}
 		file.WriteString("  desc = " + oc.outfile + "\n\n")
 	}
+
+	for _, sn := range subNinjaList {
+		file.WriteString("subninja " + sn + "\n")
+	}
 }
 
 //
@@ -1375,6 +1384,7 @@ func main() {
 	commandList = []BuildCommand{}
 	otherRuleList = map[string]OtherRule{}
 	otherRuleFileList = []OtherRuleFile{}
+	subNinjaList = []string{}
 
 	if targetName != "" {
 		fmt.Println("gobuild: make target: " + targetName)
