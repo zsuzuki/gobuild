@@ -6,16 +6,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/kuma777/go-msbuild"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
-
 	"runtime"
-
-	"gopkg.in/yaml.v2"
-
-	"github.com/kuma777/go-msbuild"
+	"strings"
 )
 
 //
@@ -237,22 +234,31 @@ func getList(block []StringList, targetName string) []string {
 				for _, d := range i.Debug {
 					lists = append(lists, d)
 				}
-			} else if isDevelop == true {
+				continue
+			}
+			if isDevelop == true {
 				for _, r := range i.Develop {
 					lists = append(lists, r)
 				}
-			} else if isRelease == true {
+				continue
+			}
+			if isRelease == true {
 				for _, r := range i.Release {
 					lists = append(lists, r)
 				}
-			} else if isDevelopRelease == true {
+				continue
+			}
+			if isDevelopRelease == true {
 				for _, r := range i.DevelopRelease {
 					lists = append(lists, r)
 				}
-			} else if isProduct == true {
+				continue
+			}
+			if isProduct == true {
 				for _, r := range i.Product {
 					lists = append(lists, r)
 				}
+				continue
 			}
 		}
 	}
@@ -563,7 +569,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			}
 			for i, src := range srlist {
 				if src[0] == '$' {
-					sabs, _ := filepath.Abs(info.outputdir + "output/" + src[1:len(src)])
+					sabs, _ := filepath.Abs(info.outputdir + "output/" + src[1:])
 					sabs = strings.Replace(sabs, ":", "$:", 1)
 					srlist[i] = filepath.ToSlash(filepath.Clean(sabs))
 				} else if src == "always" {
@@ -984,7 +990,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		if strings.HasPrefix(i, "$output") {
 			i = filepath.Clean(info.outputdir + "output" + i[7:])
 		} else {
-			useRel := (i[0] == '$')
+			useRel := i[0] == '$'
 			ii := strings.Index(i, "${")
 			if ii != -1 {
 				i, err = replaceVariable(info, i, ii, false, 0)
@@ -1325,7 +1331,7 @@ func outputMSBuild(outdir, projname string) {
 //
 func main() {
 
-	msbuild := false
+	gen_msbuild := false
 	projdir := ""
 	projname := ""
 
@@ -1339,7 +1345,7 @@ func main() {
 	flag.StringVar(&targetName, "t", "", "build target name")
 	flag.StringVar(&outputdir, "o", "build", "build directory")
 	flag.StringVar(&buildNinjaName, "f", "build.ninja", "output build.ninja filename")
-	flag.BoolVar(&msbuild, "msbuild", false, "Export MSBuild project")
+	flag.BoolVar(&gen_msbuild, "msbuild", false, "Export MSBuild project")
 	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
 	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
 	dispVersion := flag.Bool("version", false, "display version")
@@ -1410,7 +1416,7 @@ func main() {
 
 		outputNinja()
 
-		if msbuild {
+		if gen_msbuild {
 			outputMSBuild(projdir, projname)
 		}
 
@@ -1418,6 +1424,7 @@ func main() {
 	} else {
 		fmt.Println("gobuild: empty")
 	}
+	os.Exit(0)
 }
 
 //
