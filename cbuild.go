@@ -114,12 +114,12 @@ func (m MyError) Error() string {
 // build information
 //
 
-// OtherRule is not default target(ex. .bin .dat ...) rule
+// OtherRule is used for building non-default targets (ex. .bin .dat ...)
 type OtherRule struct {
-	compiler    string
-	Cmd         string
+	Compiler    string
+	Command     string
 	Title       string
-	option      []string
+	Options     []string
 	needInclude bool
 	needOption  bool
 	needDefine  bool
@@ -147,15 +147,15 @@ type AppendBuild struct {
 
 // BuildCommand is command set for one target file
 type BuildCommand struct {
-	cmd          string
-	cmdtype      string
-	cmdalias     string
-	args         []string
-	infiles      []string
-	outfile      string
-	depfile      string
-	depends      []string
-	needCmdAlias bool
+	Command          string
+	CommandType      string
+	CommandAlias     string
+	Args             []string
+	InFiles          []string
+	OutFile          string
+	DepFile          string
+	Depends          []string
+	NeedCommandAlias bool
 }
 
 // BuildResult is result by build(in directory)
@@ -319,12 +319,12 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 	}
 
 	cmd := BuildCommand{
-		cmd:          archiver,
-		cmdtype:      "ar",
-		args:         info.archiveOptions,
-		infiles:      createList,
-		outfile:      arname,
-		needCmdAlias: true}
+		Command:          archiver,
+		CommandType:      "ar",
+		Args:             info.archiveOptions,
+		InFiles:          createList,
+		OutFile:          arname,
+		NeedCommandAlias: true}
 	commandList = append(commandList, cmd)
 
 	return arname, nil
@@ -355,13 +355,13 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 
 	// execute
 	cmd := BuildCommand{
-		cmd:          linker,
-		cmdtype:      "link",
-		args:         options,
-		infiles:      createList,
-		outfile:      trname,
-		depends:      info.linkDepends,
-		needCmdAlias: true}
+		Command:          linker,
+		CommandType:      "link",
+		Args:             options,
+		InFiles:          createList,
+		OutFile:          trname,
+		Depends:          info.linkDepends,
+		NeedCommandAlias: true}
 	commandList = append(commandList, cmd)
 	//fmt.Println("-o " + NowTarget.Name + flist)
 
@@ -377,12 +377,12 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 			return e
 		}
 		pkg := BuildCommand{
-			cmd:          pkgr,
-			cmdtype:      "packager",
-			args:         pargs,
-			infiles:      []string{trname},
-			outfile:      pkgname,
-			needCmdAlias: true}
+			Command:          pkgr,
+			CommandType:      "packager",
+			Args:             pargs,
+			InFiles:          []string{trname},
+			OutFile:          pkgname,
+			NeedCommandAlias: true}
 		commandList = append(commandList, pkg)
 	}
 	return nil
@@ -402,12 +402,12 @@ func createConvert(info BuildInfo, loaddir string, createList []string, targetNa
 	}
 
 	cmd := BuildCommand{
-		cmd:          converter,
-		cmdtype:      "convert",
-		args:         info.convertOptions,
-		infiles:      clist,
-		outfile:      cvname,
-		needCmdAlias: true}
+		Command:          converter,
+		CommandType:      "convert",
+		Args:             info.convertOptions,
+		InFiles:          clist,
+		OutFile:          cvname,
+		NeedCommandAlias: true}
 	commandList = append(commandList, cmd)
 }
 
@@ -637,12 +637,12 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				outfile, _ := filepath.Abs(info.outputdir + pn)
 				outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
 				cmd := BuildCommand{
-					cmd:          p.Command,
-					cmdtype:      mycmd,
-					depends:      deps,
-					infiles:      srlist,
-					outfile:      outfile,
-					needCmdAlias: false}
+					Command:          p.Command,
+					CommandType:      mycmd,
+					Depends:          deps,
+					InFiles:          srlist,
+					OutFile:          outfile,
+					NeedCommandAlias: false}
 				commandList = append(commandList, cmd)
 			} else {
 				ext := p.Name[1:] //filepath.Ext(p.Name)
@@ -657,12 +657,12 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					outfile, _ := filepath.Abs(info.outputdir + "output/" + dst)
 					outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
 					cmd := BuildCommand{
-						cmd:          p.Command,
-						cmdtype:      mycmd,
-						depends:      deps,
-						infiles:      []string{src},
-						outfile:      outfile,
-						needCmdAlias: false}
+						Command:          p.Command,
+						CommandType:      mycmd,
+						Depends:          deps,
+						InFiles:          []string{src},
+						OutFile:          outfile,
+						NeedCommandAlias: false}
 					commandList = append(commandList, cmd)
 				}
 			}
@@ -681,6 +681,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 		return []string{}, e
 	}
 
+	//createList = append (createList, createPCH(info, objdir, loaddir, compiler)...)
 	arg1 := append(info.includes, info.defines...)
 
 	for _, f := range files {
@@ -696,8 +697,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 			f = loaddir + f
 		}
 		f, _ = filepath.Abs(f)
-		sname := filepath.ToSlash(filepath.Clean(f))
-		sname = strings.Replace(sname, ":", "$:", -1)
+		sname := strings.Replace(filepath.ToSlash(filepath.Clean(f)), ":", "$:", -1)
 		oname := filepath.ToSlash(filepath.Clean(objdir + of + ".o"))
 		dname := filepath.ToSlash(filepath.Clean(objdir + of + ".d"))
 		createList = append(createList, oname)
@@ -719,13 +719,13 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 		if ok == false {
 			// normal
 			cmd := BuildCommand{
-				cmd:          compiler,
-				cmdtype:      "compile",
-				args:         carg,
-				infiles:      []string{sname},
-				outfile:      oname,
-				depfile:      dname,
-				needCmdAlias: true}
+				Command:          compiler,
+				CommandType:      "compile",
+				Args:             carg,
+				InFiles:          []string{sname},
+				OutFile:          oname,
+				DepFile:          dname,
+				NeedCommandAlias: true}
 			commandList = append(commandList, cmd)
 		} else {
 			// custom
@@ -737,7 +737,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 				}
 			}
 			lopt := ""
-			for _, lo := range rule.option {
+			for _, lo := range rule.Options {
 				if lo == "$out" {
 					lo = oname
 				} else if lo == "$dep" {
@@ -747,7 +747,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 				}
 				lopt += " " + lo
 			}
-			compiler, ok := info.variables[rule.compiler]
+			compiler, ok := info.variables[rule.Compiler]
 			if ok == true {
 				cvi := strings.Index(compiler, "${")
 				if cvi != -1 {
@@ -771,12 +771,35 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 				}
 				otherRuleFileList = append(otherRuleFileList, ocmd)
 			} else {
-				fmt.Println("compiler:", rule.compiler, "is not found. in ["+info.mydir+"make.yml].")
+				fmt.Println("compiler:", rule.Compiler, "is not found. in ["+info.mydir+"make.yml].")
 			}
 		}
 	}
 
 	return createList, nil
+}
+
+// Creates pre-compiled header if `precompile.hpp` exists.
+func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) []string {
+	pchSrc := filepath.Join(srcdir, "precompile.hpp")
+	if !Exists(pchSrc) {
+		if verboseMode {
+			fmt.Println(pchSrc + " does not exists.")
+		}
+		return []string{}
+	}
+	if verboseMode {
+		fmt.Println(pchSrc + " found.")
+	}
+	pchDst := filepath.Join(dstdir, "precompile.hpp.pch")
+	fmt.Println("Create " + pchDst)
+	// PCH source found.
+	return []string{}
+}
+
+func Exists(filename string) bool {
+	_, err := os.Stat(filename)
+	return err == nil
 }
 
 //
@@ -829,16 +852,16 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 			}
 
 			rule = OtherRule{
-				compiler:    compiler,
-				Cmd:         cmdline,
+				Compiler:    compiler,
+				Command:     cmdline,
 				Title:       ot.Description,
-				option:      olist,
+				Options:     olist,
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
 				NeedDepend:  ot.needDependend}
 		} else {
-			rule.option = append(rule.option, olist...)
+			rule.Options = append(rule.Options, olist...)
 		}
 		otherRuleList[ext] = rule
 	}
@@ -866,13 +889,17 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 	if v.Build != "" {
 		if isDebug && v.Build != "Debug" && v.Build != "debug" {
 			return "", false
-		} else if isRelease && v.Build != "Release" && v.Build != "release" {
+		}
+		if isRelease && v.Build != "Release" && v.Build != "release" {
 			return "", false
-		} else if isDevelop && v.Build != "Develop" && v.Build != "develop" {
+		}
+		if isDevelop && v.Build != "Develop" && v.Build != "develop" {
 			return "", false
-		} else if isDevelopRelease && v.Build != "DevelopRelease" && v.Build != "develop_release" {
+		}
+		if isDevelopRelease && v.Build != "DevelopRelease" && v.Build != "develop_release" {
 			return "", false
-		} else if isProduct && v.Build != "Product" && v.Build != "product" {
+		}
+		if isProduct && v.Build != "Product" && v.Build != "product" {
 			return "", false
 		}
 	}
@@ -1164,6 +1191,7 @@ func outputRules(file *os.File) {
 		OutputDirectory    string
 		OtherRules         map[string]OtherRule
 		AppendRules        map[string]AppendBuild
+		UsePCH             bool
 	}
 	//println("Platform: " + targetType)
 	tmpl := template.Must(template.New("common").Parse(`# Rule definitions
@@ -1177,6 +1205,11 @@ rule compile
     command = $compile $options -o $out $in
     depfile = $depf
     deps = gcc
+{{- end}}
+{{- if .UsePCH}}
+rule gen_pch
+    description = Create PCH: $desc
+    command = $compile $options -x c++header -o $out $in
 {{- end}}
 rule ar
     description = Archiving: $desc
@@ -1218,7 +1251,7 @@ rule convert
 {{range $k, $v := .OtherRules}}
 rule compile{{- $k}}
     description = {{$v.Title}}: $desc
-    command = {{$v.Cmd}}
+    command = {{$v.Command}}
     {{- if $v.NeedDepend}}
     depfile = $depf
     deps = gcc
@@ -1244,7 +1277,8 @@ build always: phony
 		GroupArchives:      groupArchives,
 		OutputDirectory:    outputdir,
 		OtherRules:         otherRuleList,
-		AppendRules:        appendRules}
+		AppendRules:        appendRules,
+		UsePCH:             true}
 
 	err := tmpl.Execute(file, ctx)
 	if err != nil {
@@ -1269,25 +1303,25 @@ func outputNinja() {
 	outputRules(file)
 
 	for _, bs := range commandList {
-		file.WriteString("build " + bs.outfile + ": " + bs.cmdtype)
-		for _, f := range bs.infiles {
+		file.WriteString("build " + bs.OutFile + ": " + bs.CommandType)
+		for _, f := range bs.InFiles {
 			file.WriteString(" $\n  " + f)
 		}
-		for _, dep := range bs.depends {
+		for _, dep := range bs.Depends {
 			depstr := strings.Replace(dep, ":", "$:", 1)
 			file.WriteString(" $\n  " + depstr)
 		}
-		if bs.needCmdAlias {
-			file.WriteString("\n  " + bs.cmdtype + " = " + bs.cmd + "\n")
+		if bs.NeedCommandAlias {
+			file.WriteString("\n  " + bs.CommandType + " = " + bs.Command + "\n")
 		} else {
 			file.WriteString("\n")
 		}
-		if bs.depfile != "" {
-			file.WriteString("  depf = " + bs.depfile + "\n")
+		if bs.DepFile != "" {
+			file.WriteString("  depf = " + bs.DepFile + "\n")
 		}
-		if len(bs.args) > 0 {
+		if len(bs.Args) > 0 {
 			file.WriteString("  options =")
-			for i, o := range bs.args {
+			for i, o := range bs.Args {
 				if i&3 == 3 {
 					file.WriteString(" $\n   ")
 				}
@@ -1296,7 +1330,7 @@ func outputNinja() {
 			}
 			file.WriteString("\n")
 		}
-		file.WriteString("  desc = " + bs.outfile + "\n\n")
+		file.WriteString("  desc = " + bs.OutFile + "\n\n")
 	}
 	for _, oc := range otherRuleFileList {
 		file.WriteString("build " + oc.outfile + ": " + oc.rule + " " + oc.infile + "\n")
@@ -1325,11 +1359,11 @@ func outputMSBuild(outdir, projname string) {
 	var targets []string
 
 	for _, command := range commandList {
-		if command.cmdtype != "compile" {
+		if command.CommandType != "compile" {
 			continue
 		}
 
-		for _, infile := range command.infiles {
+		for _, infile := range command.InFiles {
 			targets = append(targets, strings.Replace(infile, "$:", ":", 1))
 		}
 	}
