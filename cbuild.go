@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 )
 
 //
@@ -66,12 +67,12 @@ type Build struct {
 
 // Other make.yml other section
 type Other struct {
-	Ext         string
-	Command     string
-	Description string
-	Need_Depend bool
-	Type        string
-	Option      []StringList `yaml:",flow"`
+	Ext           string
+	Command       string
+	Description   string
+	needDependend bool
+	Type          string
+	Option        []StringList `yaml:",flow"`
 }
 
 // Data format make.yml top structure
@@ -116,13 +117,13 @@ func (m MyError) Error() string {
 // OtherRule is not default target(ex. .bin .dat ...) rule
 type OtherRule struct {
 	compiler    string
-	cmd         string
-	title       string
+	Cmd         string
+	Title       string
 	option      []string
 	needInclude bool
 	needOption  bool
 	needDefine  bool
-	needDepend  bool
+	NeedDepend  bool
 }
 
 // OtherRuleFile is not default target(ex. .bin .dat ...) file information
@@ -139,9 +140,9 @@ type OtherRuleFile struct {
 
 // AppendBuild ...
 type AppendBuild struct {
-	command string
-	desc    string
-	deps    bool
+	Command string
+	Desc    string
+	Deps    bool
 }
 
 // BuildCommand is command set for one target file
@@ -622,9 +623,9 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					useDeps = true
 				}
 				ab := AppendBuild{
-					command: ur,
-					desc:    p.Command,
-					deps:    useDeps}
+					Command: ur,
+					Desc:    p.Command,
+					Deps:    useDeps}
 				appendRules[mycmd] = ab
 			}
 
@@ -757,7 +758,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 					}
 				}
 				ocmd := OtherRuleFile{
-					rule:     "compile" + ext[1:],
+					rule:     "compile" + ext,
 					compiler: compiler,
 					infile:   sname,
 					outfile:  oname,
@@ -765,7 +766,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 					option:   lopt,
 					define:   ldef,
 					depend:   ""}
-				if rule.needDepend == true {
+				if rule.NeedDepend == true {
 					ocmd.depend = dname
 				}
 				otherRuleFileList = append(otherRuleFileList, ocmd)
@@ -829,13 +830,13 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 
 			rule = OtherRule{
 				compiler:    compiler,
-				cmd:         cmdline,
-				title:       ot.Description,
+				Cmd:         cmdline,
+				Title:       ot.Description,
 				option:      olist,
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
-				needDepend:  ot.Need_Depend}
+				NeedDepend:  ot.needDependend}
 		} else {
 			rule.option = append(rule.option, olist...)
 		}
@@ -1155,90 +1156,100 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 // writing rules
 //
 func outputRules(file *os.File) {
-	file.WriteString("builddir = " + outputdir + "\n\n")
-	file.WriteString("rule compile\n")
-	if targetType == "WIN32" {
-		file.WriteString("  command = $compile $options -Fo$out $in\n")
-		file.WriteString("  description = Compile: $desc\n")
-		file.WriteString("  deps = msvc\n\n")
-	} else {
-		file.WriteString("  command = $compile $options -o $out $in\n")
-		file.WriteString("  description = Compile: $desc\n")
-		file.WriteString("  depfile = $depf\n")
-		file.WriteString("  deps = gcc\n\n")
+	type RuleContext struct {
+		Platform           string
+		UseResponse        bool
+		NewlineAsDelimiter bool
+		GroupArchives      bool
+		OutputDirectory    string
+		OtherRules         map[string]OtherRule
+		AppendRules        map[string]AppendBuild
 	}
-	file.WriteString("rule ar\n")
-	if useResponse == true {
-		if targetType == "WIN32" {
-			file.WriteString("  command = $ar $options /out:$out @$out.rsp\n")
-		} else {
-			file.WriteString("  command = $ar $options $out @$out.rsp\n")
-		}
-		file.WriteString("  description = Archive: $desc\n")
-		file.WriteString("  rspfile = $out.rsp\n")
-		if responseNewline == true {
-			file.WriteString("  rspfile_content = $in_newline\n")
-		} else {
-			file.WriteString("  rspfile_content = $in\n")
-		}
-	} else {
-		file.WriteString("  command = $ar $options $out $in\n")
-		file.WriteString("  description = Archive: $desc\n\n")
-	}
-	file.WriteString("rule link\n")
-	if useResponse == true {
-		if targetType == "WIN32" {
-			file.WriteString("  command = $link $options /out:$out @$out.rsp\n")
-		} else {
-			file.WriteString("  command = $link $options -o $out @$out.rsp\n")
-		}
-		file.WriteString("  description = Link: $desc\n")
-		file.WriteString("  rspfile = $out.rsp\n")
-		if responseNewline == true {
-			file.WriteString("  rspfile_content = $in_newline\n\n")
-		} else {
-			file.WriteString("  rspfile_content = $in\n\n")
-		}
-	} else {
-		if groupArchives == true {
-			file.WriteString("  command = $link $options -o $out -Wl,--start-group $in -Wl,--end-group\n")
-		} else {
-			file.WriteString("  command = $link $options -o $out $in\n")
-		}
-		file.WriteString("  description = Link: $desc\n\n")
-	}
-	file.WriteString("rule packager\n")
-	file.WriteString("  command = $packager $options $in $out\n")
-	file.WriteString("  description = Packaging: $desc\n\n")
-	file.WriteString("rule convert\n")
-	file.WriteString("  command = $convert $options -o $out $in\n")
-	file.WriteString("  description = Convert: $desc\n\n")
+	//println("Platform: " + targetType)
+	tmpl := template.Must(template.New("common").Parse(`# Rule definitions
+builddir = {{.OutputDirectory}}
+rule compile
+    description = Compiling: $desc
+{{- if eq .Platform "WIN32"}}
+    command = $compile $options -Fo$out $in
+    deps = msvc
+{{- else}}
+    command = $compile $options -o $out $in
+    depfile = $depf
+    deps = gcc
+{{- end}}
+rule ar
+    description = Archiving: $desc
+{{- if .UseResponse}}
+    {{- if eq .Platform "WIN32"}}
+    command = $ar $options /out:$out @$out.rsp
+    {{- else}}
+    command = $ar $options $out @$out.rsp
+    {{- end}}
+    rspfile = $out.rsp
+    rspfile_content = {{if .NewlineAsDelimiter}}$in_newline{{else}}$in{{end}}
+{{- else}}
+    command = $ar $options $out $in
+{{- end}}
+rule link
+{{- if .UseResponse}}
+    description = Linking: $desc
+    {{- if eq .Platform "WIN32"}}
+    command = $link $options /out:$out @$out.rsp
+    {{- else}}
+    command = $link $options -o $out @$out.rsp
+    {{- end}}
+    rspfile = $out.rsp
+    rspfile_content = {{if .NewlineAsDelimiter}}$in_newline{{else}}$in{{end}}
+{{- else}}
+    {{- if .GroupArchives}}
+    command = $link $options -o $out -Wl,--start-group $in -Wl,--end-group
+    {{- else}}
+    command = $link $options -o $out $in
+    {{- end}}
+{{- end}}
+rule packager
+    description = Packaging: $desc
+    command = $packager $options $in $out
 
-	// other compile rules.
-	for ext, rule := range otherRuleList {
-		file.WriteString("rule compile" + ext[1:] + "\n")
-		file.WriteString("  command = " + rule.cmd + "\n")
-		file.WriteString("  description = " + rule.title + ": $desc\n")
-		if rule.needDepend == true {
-			file.WriteString("  depfile = $depf\n")
-			file.WriteString("  deps = gcc\n\n")
-		} else {
-			file.WriteString("\n")
-		}
-	}
+rule convert
+    description = Converting: $desc
+    command = $convert $options -o $out $in
+{{range $k, $v := .OtherRules}}
+rule compile{{- $k}}
+    description = {{$v.Title}}: $desc
+    command = {{$v.Cmd}}
+    {{- if $v.NeedDepend}}
+    depfile = $depf
+    deps = gcc
+    {{- end}}
+{{end}}
+{{range $k, $v := .AppendRules}}
+rule {{$k}}
+    description = {{$v.Desc}}: $desc
+    command = {{$v.Command}}
+    {{- if $v.Deps}}
+    depfile = $out.d
+    deps = gcc
+    {{- end}}
+{{end}}
+build always: phony
+# end of [Rule definitions]
+`))
 
-	// appended original rules.
-	for ar, arv := range appendRules {
-		file.WriteString("rule " + ar + "\n")
-		file.WriteString("  command = " + arv.command + "\n")
-		if arv.deps == true {
-			file.WriteString("  depfile = $out.d\n")
-			file.WriteString("  deps = gcc\n")
-		}
-		file.WriteString("  description = " + arv.desc + ": $desc\n\n")
-	}
+	ctx := RuleContext{
+		Platform:           targetType,
+		UseResponse:        useResponse,
+		NewlineAsDelimiter: responseNewline,
+		GroupArchives:      groupArchives,
+		OutputDirectory:    outputdir,
+		OtherRules:         otherRuleList,
+		AppendRules:        appendRules}
 
-	file.WriteString("build always: phony\n\n")
+	err := tmpl.Execute(file, ctx)
+	if err != nil {
+		panic(err)
+	}
 }
 
 //
