@@ -681,7 +681,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 		return []string{}, e
 	}
 
-	//createList = append (createList, createPCH(info, objdir, loaddir, compiler)...)
+	createList = append (createList, createPCH(info, objdir, loaddir, compiler)...)
 	arg1 := append(info.includes, info.defines...)
 
 	for _, f := range files {
@@ -781,7 +781,8 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 
 // Creates pre-compiled header if `precompile.hpp` exists.
 func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) []string {
-	pchSrc := filepath.Join(srcdir, "precompile.hpp")
+	const pchName = "00-common-prefix.hpp"
+	pchSrc := filepath.Join(srcdir, pchName)
 	if !Exists(pchSrc) {
 		if verboseMode {
 			fmt.Println(pchSrc + " does not exists.")
@@ -791,7 +792,7 @@ func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) []
 	if verboseMode {
 		fmt.Println(pchSrc + " found.")
 	}
-	pchDst := filepath.Join(dstdir, "precompile.hpp.pch")
+	pchDst := filepath.Join(dstdir, pchName + ".pch")
 	fmt.Println("Create " + pchDst)
 	// PCH source found.
 	return []string{}
