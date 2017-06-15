@@ -215,11 +215,112 @@ var (
 	subNinjaList      []string
 )
 
-//
-//
-// build functions
-//
-//
+// The entry point.
+func main() {
+	gen_msbuild := false
+	projdir := ""
+	projname := ""
+
+	flag.BoolVar(&verboseMode, "v", false, "verbose mode")
+	flag.BoolVar(&isRelease, "release", false, "release build")
+	flag.BoolVar(&isDebug, "debug", true, "debug build")
+	flag.BoolVar(&isDevelop, "develop", false, "develop(beta) build")
+	flag.BoolVar(&isDevelopRelease, "develop_release", false, "develop(beta) release build")
+	flag.BoolVar(&isProduct, "product", false, "for production build")
+	flag.StringVar(&targetType, "type", "default", "build target type")
+	flag.StringVar(&targetName, "t", "", "build target name")
+	flag.StringVar(&outputdir, "o", "build", "build directory")
+	flag.StringVar(&buildNinjaName, "f", "build.ninja", "output build.ninja filename")
+	flag.BoolVar(&gen_msbuild, "msbuild", false, "Export MSBuild project")
+	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
+	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
+	dispVersion := flag.Bool("version", false, "display version")
+	flag.Parse()
+
+	exeName := getExeName()
+
+	versionString := cbuildVersion + "(" + runtime.Version() + "/" + runtime.Compiler + ")"
+	if *dispVersion {
+		fmt.Println(versionString)
+		os.Exit(0)
+	}
+
+	if isDevelop {
+		isDebug = false
+	}
+	if isDevelopRelease {
+		isDevelop = false
+		isDebug = false
+	}
+	if isRelease {
+		isDevelopRelease = false
+		isDevelop = false
+		isDebug = false
+	}
+	if isProduct {
+		isDevelopRelease = false
+		isRelease = false
+		isDevelop = false
+		isDebug = false
+	}
+	outputdirSet = false
+	useResponse = false
+	groupArchives = false
+	toplevel = true
+	responseNewline = false
+
+	ra := flag.Args()
+	if len(ra) > 0 && targetName == "" {
+		targetName = ra[0]
+	}
+
+	appendRules = map[string]AppendBuild{}
+	commandList = []BuildCommand{}
+	otherRuleList = map[string]OtherRule{}
+	otherRuleFileList = []OtherRuleFile{}
+	subNinjaList = []string{}
+
+	if targetName != "" {
+		fmt.Println("gobuild: make target: " + targetName)
+	}
+	buildinfo := BuildInfo{
+		variables:      map[string]string{"option_prefix": "-"},
+		includes:       []string{},
+		defines:        []string{},
+		options:        []string{},
+		archiveOptions: []string{},
+		convertOptions: []string{},
+		linkOptions:    []string{},
+		selectTarget:   targetName,
+		target:         targetName}
+	var r, err = build(buildinfo, "")
+	if r.success == false {
+		fmt.Printf("%s: error: %s", exeName, err.Error())
+		os.Exit(1)
+	}
+
+	nlen := len(commandList) + len(otherRuleFileList)
+	if nlen <= 0 {
+		fmt.Printf("%s: No commands found.\n", exeName)
+		os.Exit(0)
+	}
+	outputNinja()
+
+	if gen_msbuild {
+		outputMSBuild(projdir, projname)
+	}
+	fmt.Printf ("%s: done.\n", exeName)
+	os.Exit(0)
+}
+
+// Obtains executable name if possible.
+func getExeName () string {
+	var name = "gobuild"
+	if n, err := os.Executable(); err == nil {
+		name = n
+	}
+	return name
+}
 
 //
 //
@@ -267,8 +368,6 @@ func getList(block []StringList, targetName string) []string {
 }
 
 //
-//
-//
 func getReplacedVariable(info BuildInfo, name string) (string, error) {
 	str, ok := info.variables[name]
 	if ok == false {
@@ -283,6 +382,8 @@ func getReplacedVariable(info BuildInfo, name string) (string, error) {
 	return str, nil
 }
 
+//
+// archive objects
 //
 func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 	sl := strings.Split(str, " ")
@@ -301,7 +402,7 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 }
 
 //
-// archive objects
+// link objects
 //
 func createArchive(info BuildInfo, createList []string, targetName string) (string, error) {
 
@@ -331,7 +432,7 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 }
 
 //
-// link objects
+// convert objects
 //
 func createLink(info BuildInfo, createList []string, targetName string, packager Packager) error {
 	trname := info.outputdir + targetName
@@ -389,7 +490,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 }
 
 //
-// convert objects
+// unit tests
 //
 func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
 	cvname := info.outputdir + targetName
@@ -412,7 +513,7 @@ func createConvert(info BuildInfo, loaddir string, createList []string, targetNa
 }
 
 //
-// unit tests
+// option
 //
 func createTest(info BuildInfo, createList []string, loaddir string) error {
 	carg := append(info.includes, info.defines...)
@@ -441,7 +542,7 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 }
 
 //
-// option
+// target
 //
 func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
 	sl := strings.Split(optionPrefix+opt, " ")
@@ -462,8 +563,6 @@ func appendOption(info BuildInfo, lists []string, opt string, optionPrefix strin
 	return lists, nil
 }
 
-//
-// target
 //
 func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 	if info.selectTarget != "" {
@@ -519,6 +618,8 @@ func replacePath(value string, addDir string) (string, string) {
 }
 
 //
+// pre build
+//
 func replaceVariable(info BuildInfo, str string, start int, noError bool, nest int) (string, error) {
 	src := strings.Split(str[start+2:], "${")
 	ret := str[:start]
@@ -557,7 +658,7 @@ func replaceVariable(info BuildInfo, str string, start int, noError bool, nest i
 }
 
 //
-// pre build
+// compile files
 //
 func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 	for _, p := range plist {
@@ -671,9 +772,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 	return nil
 }
 
-//
-// compile files
-//
+// Creates pre-compiled header if `precompile.hpp` exists.
 func compileFiles(info BuildInfo, objdir string, loaddir string, files []string) (createList []string, e error) {
 
 	compiler, e := getReplacedVariable(info, "compiler")
@@ -681,7 +780,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 		return []string{}, e
 	}
 
-	createList = append (createList, createPCH(info, objdir, loaddir, compiler)...)
+	createList = append(createList, createPCH(info, objdir, loaddir, compiler)...)
 	arg1 := append(info.includes, info.defines...)
 
 	for _, f := range files {
@@ -779,7 +878,6 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 	return createList, nil
 }
 
-// Creates pre-compiled header if `precompile.hpp` exists.
 func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) []string {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := filepath.Join(srcdir, pchName)
@@ -792,19 +890,20 @@ func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) []
 	if verboseMode {
 		fmt.Println(pchSrc + " found.")
 	}
-	pchDst := filepath.Join(dstdir, pchName + ".pch")
+	pchDst := filepath.Join(dstdir, pchName+".pch")
 	fmt.Println("Create " + pchDst)
 	// PCH source found.
 	return []string{}
 }
 
+//
+// other rule
+//
 func Exists(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil
 }
 
-//
-// other rule
 //
 func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 	for _, ot := range olist {
@@ -880,6 +979,8 @@ func checkType(vlist []Variable) string {
 }
 
 //
+// build main
+//
 func getVariable(info BuildInfo, v Variable) (string, bool) {
 	if v.Type != "" && v.Type != targetType {
 		return "", false
@@ -908,7 +1009,7 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 }
 
 //
-// build main
+// writing rules
 //
 func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	loaddir := pathname
@@ -1181,8 +1282,72 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 }
 
 //
-// writing rules
+// Creates *.ninja file.
 //
+func outputNinja() {
+	if verboseMode == true {
+		fmt.Println("output " + buildNinjaName)
+	}
+	file, err := os.Create(buildNinjaName)
+	if err != nil {
+		fmt.Println("gobuild: error:", err.Error())
+		os.Exit(1)
+	}
+
+	// execute build
+	outputRules(file)
+
+	for _, bs := range commandList {
+		file.WriteString("build " + bs.OutFile + ": " + bs.CommandType)
+		for _, f := range bs.InFiles {
+			file.WriteString(" $\n  " + f)
+		}
+		for _, dep := range bs.Depends {
+			depstr := strings.Replace(dep, ":", "$:", 1)
+			file.WriteString(" $\n  " + depstr)
+		}
+		if bs.NeedCommandAlias {
+			file.WriteString("\n  " + bs.CommandType + " = " + bs.Command + "\n")
+		} else {
+			file.WriteString("\n")
+		}
+		if bs.DepFile != "" {
+			file.WriteString("  depf = " + bs.DepFile + "\n")
+		}
+		if len(bs.Args) > 0 {
+			file.WriteString("  options =")
+			for i, o := range bs.Args {
+				if i&3 == 3 {
+					file.WriteString(" $\n   ")
+				}
+				ostr := strings.Replace(o, ":", "$:", 1)
+				file.WriteString(" " + ostr)
+			}
+			file.WriteString("\n")
+		}
+		file.WriteString("  desc = " + bs.OutFile + "\n\n")
+	}
+	for _, oc := range otherRuleFileList {
+		file.WriteString("build " + oc.outfile + ": " + oc.rule + " " + oc.infile + "\n")
+		file.WriteString("  compiler = " + oc.compiler + "\n")
+		if oc.include != "" {
+			file.WriteString("  include = " + oc.include + "\n")
+		}
+		if oc.option != "" {
+			file.WriteString("  option = " + oc.option + "\n")
+		}
+		if oc.depend != "" {
+			file.WriteString("  depf = " + oc.depend + "\n")
+		}
+		file.WriteString("  desc = " + oc.outfile + "\n\n")
+	}
+
+	for _, sn := range subNinjaList {
+		file.WriteString("subninja " + sn + "\n")
+	}
+}
+
+// Emits common rules.
 func outputRules(file *os.File) {
 	type RuleContext struct {
 		Platform           string
@@ -1288,73 +1453,7 @@ build always: phony
 }
 
 //
-// writing ninja
-//
-func outputNinja() {
-	if verboseMode == true {
-		fmt.Println("output " + buildNinjaName)
-	}
-	file, err := os.Create(buildNinjaName)
-	if err != nil {
-		fmt.Println("gobuild: error:", err.Error())
-		os.Exit(1)
-	}
-
-	// execute build
-	outputRules(file)
-
-	for _, bs := range commandList {
-		file.WriteString("build " + bs.OutFile + ": " + bs.CommandType)
-		for _, f := range bs.InFiles {
-			file.WriteString(" $\n  " + f)
-		}
-		for _, dep := range bs.Depends {
-			depstr := strings.Replace(dep, ":", "$:", 1)
-			file.WriteString(" $\n  " + depstr)
-		}
-		if bs.NeedCommandAlias {
-			file.WriteString("\n  " + bs.CommandType + " = " + bs.Command + "\n")
-		} else {
-			file.WriteString("\n")
-		}
-		if bs.DepFile != "" {
-			file.WriteString("  depf = " + bs.DepFile + "\n")
-		}
-		if len(bs.Args) > 0 {
-			file.WriteString("  options =")
-			for i, o := range bs.Args {
-				if i&3 == 3 {
-					file.WriteString(" $\n   ")
-				}
-				ostr := strings.Replace(o, ":", "$:", 1)
-				file.WriteString(" " + ostr)
-			}
-			file.WriteString("\n")
-		}
-		file.WriteString("  desc = " + bs.OutFile + "\n\n")
-	}
-	for _, oc := range otherRuleFileList {
-		file.WriteString("build " + oc.outfile + ": " + oc.rule + " " + oc.infile + "\n")
-		file.WriteString("  compiler = " + oc.compiler + "\n")
-		if oc.include != "" {
-			file.WriteString("  include = " + oc.include + "\n")
-		}
-		if oc.option != "" {
-			file.WriteString("  option = " + oc.option + "\n")
-		}
-		if oc.depend != "" {
-			file.WriteString("  depf = " + oc.depend + "\n")
-		}
-		file.WriteString("  desc = " + oc.outfile + "\n\n")
-	}
-
-	for _, sn := range subNinjaList {
-		file.WriteString("subninja " + sn + "\n")
-	}
-}
-
-//
-// create vcxproj
+// Creates *.vcxproj (for VisualStudio).
 //
 func outputMSBuild(outdir, projname string) {
 	var targets []string
@@ -1372,106 +1471,6 @@ func outputMSBuild(outdir, projname string) {
 	msbuild.ExportProject(targets, outdir, projname)
 }
 
-//
-// application interface
-//
-func main() {
-
-	gen_msbuild := false
-	projdir := ""
-	projname := ""
-
-	flag.BoolVar(&verboseMode, "v", false, "verbose mode")
-	flag.BoolVar(&isRelease, "release", false, "release build")
-	flag.BoolVar(&isDebug, "debug", true, "debug build")
-	flag.BoolVar(&isDevelop, "develop", false, "develop(beta) build")
-	flag.BoolVar(&isDevelopRelease, "develop_release", false, "develop(beta) release build")
-	flag.BoolVar(&isProduct, "product", false, "for production build")
-	flag.StringVar(&targetType, "type", "default", "build target type")
-	flag.StringVar(&targetName, "t", "", "build target name")
-	flag.StringVar(&outputdir, "o", "build", "build directory")
-	flag.StringVar(&buildNinjaName, "f", "build.ninja", "output build.ninja filename")
-	flag.BoolVar(&gen_msbuild, "msbuild", false, "Export MSBuild project")
-	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
-	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
-	dispVersion := flag.Bool("version", false, "display version")
-	flag.Parse()
-
-	versionString := cbuildVersion + "(" + runtime.Version() + "/" + runtime.Compiler + ")"
-	if *dispVersion {
-		fmt.Println(versionString)
-		os.Exit(0)
-	}
-
-	if isDevelop {
-		isDebug = false
-	}
-	if isDevelopRelease {
-		isDevelop = false
-		isDebug = false
-	}
-	if isRelease {
-		isDevelopRelease = false
-		isDevelop = false
-		isDebug = false
-	}
-	if isProduct {
-		isDevelopRelease = false
-		isRelease = false
-		isDevelop = false
-		isDebug = false
-	}
-	outputdirSet = false
-	useResponse = false
-	groupArchives = false
-	toplevel = true
-	responseNewline = false
-
-	ra := flag.Args()
-	if len(ra) > 0 && targetName == "" {
-		targetName = ra[0]
-	}
-
-	appendRules = map[string]AppendBuild{}
-	commandList = []BuildCommand{}
-	otherRuleList = map[string]OtherRule{}
-	otherRuleFileList = []OtherRuleFile{}
-	subNinjaList = []string{}
-
-	if targetName != "" {
-		fmt.Println("gobuild: make target: " + targetName)
-	}
-	buildinfo := BuildInfo{
-		variables:      map[string]string{"option_prefix": "-"},
-		includes:       []string{},
-		defines:        []string{},
-		options:        []string{},
-		archiveOptions: []string{},
-		convertOptions: []string{},
-		linkOptions:    []string{},
-		selectTarget:   targetName,
-		target:         targetName}
-	var r, err = build(buildinfo, "")
-	if r.success == false {
-		fmt.Println("gobuild: error:", err.Error())
-		os.Exit(1)
-	}
-
-	nlen := len(commandList) + len(otherRuleFileList)
-	if nlen > 0 {
-
-		outputNinja()
-
-		if gen_msbuild {
-			outputMSBuild(projdir, projname)
-		}
-
-		fmt.Println("gobuild: done.")
-	} else {
-		fmt.Println("gobuild: empty")
-	}
-	os.Exit(0)
-}
 
 //
 //
