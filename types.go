@@ -1,25 +1,5 @@
 package main
 
-// BuildInfo is build information in directory
-type BuildInfo struct {
-	variables      map[string]string
-	includes       []string
-	defines        []string
-	options        []string
-	archiveOptions []string
-	convertOptions []string
-	linkOptions    []string
-	linkDepends    []string
-	libraries      []string
-	packageTarget  string
-	packageCommand string
-	selectTarget   string
-	target         string
-	outputdir      string
-	subdir         []string
-	mydir          string
-	tests          []string
-}
 
 // Packager make.yml package information
 type Packager struct {

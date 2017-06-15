@@ -128,8 +128,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	nlen := len(commandList) + len(otherRuleFileList)
-	if nlen <= 0 {
+	if nlen := len(commandList) + len(otherRuleFileList); nlen <= 0 {
 		fmt.Printf("%s: No commands found.\n", exeName)
 		os.Exit(0)
 	}
@@ -239,7 +238,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			info.variables[v.Name] = val
 		}
 	}
-	optionPrefix := info.variables["option_prefix"]
+	optionPrefix := info.OptionPrefix()
 	if outputdirSet == false {
 		switch {
 		case isProduct:
@@ -261,7 +260,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 
 	for _, i := range getList(d.Include, info.target) {
 		if strings.HasPrefix(i, "$output") {
-			i = filepath.Clean(info.outputdir + "output" + i[7:])
+			i = filepath.Clean(filepath.Join (info.outputdir, "output" + i[7:]))
 		} else {
 			useRel := i[0] == '$'
 			ii := strings.Index(i, "${")
@@ -273,16 +272,14 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				}
 			}
 			if useRel == false && filepath.IsAbs(i) == false {
-				i = filepath.Clean(loaddir + i)
+				i = filepath.Clean(filepath.Join (loaddir, i))
 			}
 		}
-		if strings.Index(i, " ") != -1 {
-			i = "\"" + i + "\""
-		}
-		info.includes = append(info.includes, optionPrefix+"I"+filepath.ToSlash(i))
+		info.AddInclude(i)
 	}
 	for _, d := range getList(d.Define, info.target) {
-		info.defines = append(info.defines, optionPrefix+"D"+d)
+		info.AddDefines(d)
+		//info.defines = append(info.defines, optionPrefix+"D"+d)
 	}
 	for _, o := range getList(d.Option, info.target) {
 		info.options, err = appendOption(info, info.options, o, optionPrefix)
@@ -1186,10 +1183,10 @@ func outputNinja() {
 	}
 	if err := tPath.Commit(); err != nil {
 		fmt.Printf("%s: Renaming %s to %s failed.\n", exeName, tPath.TempOutput, tPath.Output)
-		os.Exit (1)
+		os.Exit(1)
 	}
 	if verboseMode {
-		fmt.Printf ("%s: Renaming %s to %s\n", exeName, tPath.TempOutput, tPath.Output)
+		fmt.Printf("%s: Renaming %s to %s\n", exeName, tPath.TempOutput, tPath.Output)
 	}
 }
 
