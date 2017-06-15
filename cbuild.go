@@ -6,14 +6,15 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/kuma777/go-msbuild"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
+
+	"github.com/kuma777/go-msbuild"
+	"gopkg.in/yaml.v2"
 )
 
 //
@@ -260,7 +261,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 
 	for _, i := range getList(d.Include, info.target) {
 		if strings.HasPrefix(i, "$output") {
-			i = filepath.Clean(filepath.Join (info.outputdir, "output" + i[7:]))
+			i = filepath.Clean(filepath.Join(info.outputdir, "output"+i[7:]))
 		} else {
 			useRel := i[0] == '$'
 			ii := strings.Index(i, "${")
@@ -272,7 +273,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				}
 			}
 			if useRel == false && filepath.IsAbs(i) == false {
-				i = filepath.Clean(filepath.Join (loaddir, i))
+				i = filepath.Clean(filepath.Join(loaddir, i))
 			}
 		}
 		info.AddInclude(i)

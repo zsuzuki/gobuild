@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
-	"fmt"
 )
 
 // BuildInfo is build information in directory
@@ -50,5 +50,3 @@ func (info *BuildInfo) AddDefines(def string) {
 	pfx := info.OptionPrefix()
 	info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, def))
 }
-
-

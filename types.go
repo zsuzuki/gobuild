@@ -1,6 +1,5 @@
 package main
 
-
 // Packager make.yml package information
 type Packager struct {
 	Target string

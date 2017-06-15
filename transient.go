@@ -9,8 +9,9 @@
 package main
 
 import (
-	"path/filepath"
 	"os"
+	"path/filepath"
+
 	"gopkg.in/myesui/uuid.v1"
 )
 
@@ -25,15 +26,15 @@ func NewTransientOutput(path string) *TransientOutputPath {
 	result := new(TransientOutputPath)
 	result.Output = filepath.Clean(path)
 	d := filepath.Dir(result.Output)
-	id := uuid.NewV4 ()
-	result.TempOutput = filepath.Join (d, "gb-" + id.String() + ".tmp")
+	id := uuid.NewV4()
+	result.TempOutput = filepath.Join(d, "gb-"+id.String()+".tmp")
 	result.done = false
 	return result
 }
 
 // Commits the result.
 func (t *TransientOutputPath) Commit() error {
-	if ! t.done {
+	if !t.done {
 		t.done = true
 		return os.Rename(t.TempOutput, t.Output)
 	}
@@ -42,7 +43,7 @@ func (t *TransientOutputPath) Commit() error {
 
 // Discard the transient output.
 func (t *TransientOutputPath) Abort() error {
-	if ! t.done {
+	if !t.done {
 		t.done = true
 		return os.Remove(t.TempOutput)
 	}
@@ -50,6 +51,6 @@ func (t *TransientOutputPath) Abort() error {
 }
 
 // Returns true if operation is done (Committed or Aborted).
-func (t *TransientOutputPath) Done () bool {
+func (t *TransientOutputPath) Done() bool {
 	return t.done
 }
