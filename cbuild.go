@@ -17,175 +17,6 @@ import (
 )
 
 //
-// data structures
-//
-
-// Packager make.yml package information
-type Packager struct {
-	Target string
-	Option string
-}
-
-// Target make.yml target file information
-type Target struct {
-	Name      string
-	Type      string
-	By_Target string
-	Packager  Packager
-}
-
-// StringList make.yml string list('- list: ...')
-type StringList struct {
-	Type           string
-	Target         string
-	Debug          []string `yaml:",flow"`
-	Release        []string `yaml:",flow"`
-	Develop        []string `yaml:",flow"`
-	DevelopRelease []string `yaml:",flow"`
-	Product        []string `yaml:",flow"`
-	List           []string `yaml:",flow"`
-}
-
-// Variable make.yml variable section
-type Variable struct {
-	Name   string
-	Value  string
-	Type   string
-	Target string
-	Build  string
-}
-
-// Build in directory source list
-type Build struct {
-	Name    string
-	Command string
-	Target  string
-	Type    string
-	Deps    string
-	Source  []StringList `yaml:",flow"`
-}
-
-// Other make.yml other section
-type Other struct {
-	Ext           string
-	Command       string
-	Description   string
-	needDependend bool
-	Type          string
-	Option        []StringList `yaml:",flow"`
-}
-
-// Data format make.yml top structure
-type Data struct {
-	Target         []Target     `yaml:",flow"`
-	Include        []StringList `yaml:",flow"`
-	Variable       []Variable   `yaml:",flow"`
-	Define         []StringList `yaml:",flow"`
-	Option         []StringList `yaml:",flow"`
-	Archive_Option []StringList `yaml:",flow"`
-	Convert_Option []StringList `yaml:",flow"`
-	Link_Option    []StringList `yaml:",flow"`
-	Link_Depend    []StringList `yaml:",flow"`
-	Libraries      []StringList `yaml:",flow"`
-	Prebuild       []Build      `yaml:",flow"`
-	Postbuild      []Build      `yaml:",flow"`
-	Source         []StringList `yaml:",flow"`
-	Convert_List   []StringList `yaml:",flow"`
-	Subdir         []StringList `yaml:",flow"`
-	Tests          []StringList `yaml:",flow"`
-	Other          []Other      `yaml:",flow"`
-	SubNinja       []StringList `yaml:",flow"`
-}
-
-//
-// error
-//
-
-// MyError is override error in application
-type MyError struct {
-	str string
-}
-
-func (m MyError) Error() string {
-	return m.str
-}
-
-//
-// build information
-//
-
-// OtherRule is used for building non-default targets (ex. .bin .dat ...)
-type OtherRule struct {
-	Compiler    string
-	Command     string
-	Title       string
-	Options     []string
-	needInclude bool
-	needOption  bool
-	needDefine  bool
-	NeedDepend  bool
-}
-
-// OtherRuleFile is not default target(ex. .bin .dat ...) file information
-type OtherRuleFile struct {
-	rule     string
-	compiler string
-	infile   string
-	outfile  string
-	include  string
-	option   string
-	define   string
-	depend   string
-}
-
-// AppendBuild ...
-type AppendBuild struct {
-	Command string
-	Desc    string
-	Deps    bool
-}
-
-// BuildCommand is command set for one target file
-type BuildCommand struct {
-	Command          string
-	CommandType      string
-	CommandAlias     string
-	Args             []string
-	InFiles          []string
-	OutFile          string
-	DepFile          string
-	Depends          []string
-	NeedCommandAlias bool
-}
-
-// BuildResult is result by build(in directory)
-type BuildResult struct {
-	success    bool
-	createList []string
-}
-
-// BuildInfo is build information in directory
-type BuildInfo struct {
-	variables      map[string]string
-	includes       []string
-	defines        []string
-	options        []string
-	archiveOptions []string
-	convertOptions []string
-	linkOptions    []string
-	linkDepends    []string
-	libraries      []string
-	packageTarget  string
-	packageCommand string
-	selectTarget   string
-	target         string
-	outputdir      string
-	subdir         []string
-	mydir          string
-	tests          []string
-}
-
-//
 // global variables
 //
 const (
@@ -245,19 +76,17 @@ func main() {
 		os.Exit(0)
 	}
 
-	if isDevelop {
+	switch {
+	case isDevelop:
 		isDebug = false
-	}
-	if isDevelopRelease {
+	case isDevelopRelease:
 		isDevelop = false
 		isDebug = false
-	}
-	if isRelease {
+	case isRelease:
 		isDevelopRelease = false
 		isDevelop = false
 		isDebug = false
-	}
-	if isProduct {
+	case isProduct:
 		isDevelopRelease = false
 		isRelease = false
 		isDevelop = false
@@ -309,12 +138,12 @@ func main() {
 	if gen_msbuild {
 		outputMSBuild(projdir, projname)
 	}
-	fmt.Printf ("%s: done.\n", exeName)
+	fmt.Printf("%s: done.\n", exeName)
 	os.Exit(0)
 }
 
 // Obtains executable name if possible.
-func getExeName () string {
+func getExeName() string {
 	var name = "gobuild"
 	if n, err := os.Executable(); err == nil {
 		name = n
@@ -335,7 +164,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	if verboseMode == true {
 		fmt.Println(pathname + ": start")
 	}
-	myYaml := loaddir + "make.yml"
+	myYaml := filepath.Join(loaddir, "make.yml")
 	buf, err := ioutil.ReadFile(myYaml)
 	if err != nil {
 		e := MyError{str: myYaml + ": " + err.Error()}
@@ -412,23 +241,23 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	}
 	optionPrefix := info.variables["option_prefix"]
 	if outputdirSet == false {
-		outputdir += "/" + targetType + "/"
-		if isProduct {
-			outputdir += "Product"
-		} else if isDevelop {
-			outputdir += "Develop"
-		} else if isDevelop {
-			outputdir += "DevelopRelease"
-		} else if isRelease {
-			outputdir += "Release"
-		} else {
-			outputdir += "Debug"
+		switch {
+		case isProduct:
+			outputdir = filepath.Join(outputdir, targetType, "Product")
+		case isDevelop:
+			outputdir = filepath.Join(outputdir, targetType, "Develop")
+		case isDevelopRelease:
+			outputdir = filepath.Join(outputdir, targetType, "DevelopRelease")
+		case isRelease:
+			outputdir = filepath.Join(outputdir, targetType, "Release")
+		default:
+			outputdir = filepath.Join(outputdir, targetType, "Debug")
 		}
 		outputdirSet = true
 	}
 
-	info.outputdir = outputdir + "/" + loaddir
-	objdir := outputdir + "/" + loaddir + ".objs" + objsSuffix + "/"
+	info.outputdir = filepath.Join(outputdir, loaddir) + "/"
+	objdir := filepath.Clean(filepath.Join(outputdir, loaddir, ".objs"+objsSuffix)) + "/" // Proofs '/' ending
 
 	for _, i := range getList(d.Include, info.target) {
 		if strings.HasPrefix(i, "$output") {
@@ -1285,15 +1114,20 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 // Creates *.ninja file.
 //
 func outputNinja() {
-	if verboseMode == true {
+	exeName := getExeName()
+	if verboseMode {
 		fmt.Println("output " + buildNinjaName)
 	}
-	file, err := os.Create(buildNinjaName)
+	tPath := NewTransientOutput(buildNinjaName)
+	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
 		fmt.Println("gobuild: error:", err.Error())
 		os.Exit(1)
 	}
-
+	defer tPath.Abort()
+	if verboseMode {
+		fmt.Printf("%s: Creating transient output: %s\n", exeName, tPath.TempOutput)
+	}
 	// execute build
 	outputRules(file)
 
@@ -1344,6 +1178,18 @@ func outputNinja() {
 
 	for _, sn := range subNinjaList {
 		file.WriteString("subninja " + sn + "\n")
+	}
+	if err := file.Close(); err != nil {
+		tPath.Abort()
+		fmt.Printf("%s: Close failed.\n", exeName)
+		os.Exit(1)
+	}
+	if err := tPath.Commit(); err != nil {
+		fmt.Printf("%s: Renaming %s to %s failed.\n", exeName, tPath.TempOutput, tPath.Output)
+		os.Exit (1)
+	}
+	if verboseMode {
+		fmt.Printf ("%s: Renaming %s to %s\n", exeName, tPath.TempOutput, tPath.Output)
 	}
 }
 
@@ -1441,7 +1287,7 @@ build always: phony
 		UseResponse:        useResponse,
 		NewlineAsDelimiter: responseNewline,
 		GroupArchives:      groupArchives,
-		OutputDirectory:    outputdir,
+		OutputDirectory:    filepath.ToSlash(outputdir),
 		OtherRules:         otherRuleList,
 		AppendRules:        appendRules,
 		UsePCH:             true}
@@ -1470,7 +1316,6 @@ func outputMSBuild(outdir, projname string) {
 
 	msbuild.ExportProject(targets, outdir, projname)
 }
-
 
 //
 //
