@@ -1,3 +1,11 @@
+/*
+ * Manages transient output path.
+ *
+ * Performs:
+ *  1. Output to temporal file to the directory of desired output file.
+ *  2. Atomically rename it to the final output.
+ *
+ */
 package main
 
 import (
@@ -12,6 +20,7 @@ type TransientOutputPath struct {
 	done       bool
 }
 
+// Creates a context for atomic renaming output.
 func NewTransientOutput(path string) *TransientOutputPath {
 	result := new(TransientOutputPath)
 	result.Output = filepath.Clean(path)
@@ -22,6 +31,7 @@ func NewTransientOutput(path string) *TransientOutputPath {
 	return result
 }
 
+// Commits the result.
 func (t *TransientOutputPath) Commit() error {
 	if ! t.done {
 		t.done = true
@@ -30,13 +40,16 @@ func (t *TransientOutputPath) Commit() error {
 	return nil
 }
 
+// Discard the transient output.
 func (t *TransientOutputPath) Abort() error {
 	if ! t.done {
+		t.done = true
 		return os.Remove(t.TempOutput)
 	}
 	return nil
 }
 
+// Returns true if operation is done (Committed or Aborted).
 func (t *TransientOutputPath) Done () bool {
 	return t.done
 }
