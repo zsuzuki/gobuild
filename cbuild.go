@@ -323,6 +323,279 @@ func getExeName () string {
 }
 
 //
+// writing rules
+//
+func build(info BuildInfo, pathname string) (result BuildResult, err error) {
+	loaddir := pathname
+	if loaddir == "" {
+		loaddir = "./"
+	} else {
+		loaddir += "/"
+	}
+	if verboseMode == true {
+		fmt.Println(pathname + ": start")
+	}
+	myYaml := loaddir + "make.yml"
+	buf, err := ioutil.ReadFile(myYaml)
+	if err != nil {
+		e := MyError{str: myYaml + ": " + err.Error()}
+		result.success = false
+		return result, e
+	}
+
+	var d Data
+	err = yaml.Unmarshal(buf, &d)
+	if err != nil {
+		e := MyError{str: myYaml + ": " + err.Error()}
+		result.success = false
+		return result, e
+	}
+
+	info.mydir = loaddir
+	//
+	// select target
+	//
+	NowTarget, objsSuffix, ok := getTarget(info, d.Target)
+	if ok == false {
+		e := MyError{str: "No Target"}
+		result.success = false
+		return result, e
+	}
+	if info.target == "" {
+		info.target = NowTarget.Name
+		fmt.Println("gobuild: make target: " + info.target)
+	}
+	info.selectTarget = ""
+
+	if toplevel == true && targetType == "default" {
+		targetType = checkType(d.Variable)
+	}
+	toplevel = false
+	//
+	// get rules
+	//
+	newvar := map[string]string{}
+	for ik, iv := range info.variables {
+		newvar[ik] = iv
+	}
+	info.variables = newvar
+	for _, v := range d.Variable {
+		val, ok := getVariable(info, v)
+		if ok {
+			if v.Name == "enable_response" {
+				if val == "true" {
+					useResponse = true
+				} else if val == "false" {
+					useResponse = false
+				} else {
+					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
+				}
+			} else if v.Name == "response_newline" {
+				if val == "true" {
+					responseNewline = true
+				} else if val == "false" {
+					responseNewline = false
+				} else {
+					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
+				}
+			} else if v.Name == "group_archives" {
+				if val == "true" {
+					groupArchives = true
+				} else if val == "false" {
+					groupArchives = false
+				} else {
+					fmt.Println(" warning: group_archives value [", v.Value, "] is unsupport(true/false)")
+				}
+			}
+			info.variables[v.Name] = val
+		}
+	}
+	optionPrefix := info.variables["option_prefix"]
+	if outputdirSet == false {
+		outputdir += "/" + targetType + "/"
+		if isProduct {
+			outputdir += "Product"
+		} else if isDevelop {
+			outputdir += "Develop"
+		} else if isDevelop {
+			outputdir += "DevelopRelease"
+		} else if isRelease {
+			outputdir += "Release"
+		} else {
+			outputdir += "Debug"
+		}
+		outputdirSet = true
+	}
+
+	info.outputdir = outputdir + "/" + loaddir
+	objdir := outputdir + "/" + loaddir + ".objs" + objsSuffix + "/"
+
+	for _, i := range getList(d.Include, info.target) {
+		if strings.HasPrefix(i, "$output") {
+			i = filepath.Clean(info.outputdir + "output" + i[7:])
+		} else {
+			useRel := i[0] == '$'
+			ii := strings.Index(i, "${")
+			if ii != -1 {
+				i, err = replaceVariable(info, i, ii, false, 0)
+				if err != nil {
+					result.success = false
+					return result, err
+				}
+			}
+			if useRel == false && filepath.IsAbs(i) == false {
+				i = filepath.Clean(loaddir + i)
+			}
+		}
+		if strings.Index(i, " ") != -1 {
+			i = "\"" + i + "\""
+		}
+		info.includes = append(info.includes, optionPrefix+"I"+filepath.ToSlash(i))
+	}
+	for _, d := range getList(d.Define, info.target) {
+		info.defines = append(info.defines, optionPrefix+"D"+d)
+	}
+	for _, o := range getList(d.Option, info.target) {
+		info.options, err = appendOption(info, info.options, o, optionPrefix)
+		if err != nil {
+			result.success = false
+			return result, err
+		}
+	}
+	for _, a := range getList(d.Archive_Option, info.target) {
+		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
+		if err != nil {
+			result.success = false
+			return result, err
+		}
+	}
+	for _, c := range getList(d.Convert_Option, info.target) {
+		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
+		if err != nil {
+			result.success = false
+			return result, err
+		}
+	}
+	for _, l := range getList(d.Link_Option, info.target) {
+		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
+		if err != nil {
+			result.success = false
+			return result, err
+		}
+	}
+	for _, ls := range getList(d.Libraries, info.target) {
+		info.libraries, err = appendOption(info, info.libraries, ls, optionPrefix+"l")
+		if err != nil {
+			result.success = false
+			return result, err
+		}
+	}
+	for _, ld := range getList(d.Link_Depend, info.target) {
+		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
+		if err != nil {
+			result.success = false
+			return result, err
+		}
+	}
+	for _, subninja := range getList(d.SubNinja, info.target) {
+		subNinjaList = append(subNinjaList, subninja)
+	}
+
+	err = createOtherRule(info, d.Other, optionPrefix)
+	if err != nil {
+		return result, err
+	}
+
+	files := getList(d.Source, info.target)
+	cvfiles := getList(d.Convert_List, info.target)
+	testfiles := getList(d.Tests, info.target)
+
+	// sub-directories
+	subdirs := getList(d.Subdir, info.target)
+	subdirCreateList := []string{}
+	for _, s := range subdirs {
+		sd := loaddir + s
+		var r, e = build(info, sd)
+		if r.success == false {
+			return r, e
+		}
+		if len(r.createList) > 0 {
+			subdirCreateList = append(subdirCreateList, r.createList...)
+		}
+	}
+
+	// pre build files
+	err = createPrebuild(info, loaddir, d.Prebuild)
+	if err != nil {
+		return result, err
+	}
+
+	// create compile list
+	createList := []string{}
+	if len(files) > 0 {
+		var e error
+		createList, e = compileFiles(info, objdir, loaddir, files)
+		if e != nil {
+			result.success = false
+			return result, e
+		}
+	}
+
+	if NowTarget.Type == "library" {
+		// archive
+		if len(createList) > 0 {
+			arname, e := createArchive(info, createList, NowTarget.Name)
+			if e != nil {
+				result.success = false
+				return result, e
+			}
+			result.createList = append(subdirCreateList, arname)
+			//fmt.Println(info.archiveOptions+arname+alist)
+		} else {
+			fmt.Println("There are no files to build.", loaddir)
+		}
+	} else if NowTarget.Type == "execute" {
+		// link program
+		if len(createList) > 0 || len(subdirCreateList) > 0 {
+			e := createLink(info, append(createList, subdirCreateList...), NowTarget.Name, NowTarget.Packager)
+			if e != nil {
+				result.success = false
+				return result, e
+			}
+		} else {
+			fmt.Println("There are no files to build.", loaddir)
+		}
+	} else if NowTarget.Type == "convert" {
+		if len(cvfiles) > 0 {
+			createConvert(info, loaddir, cvfiles, NowTarget.Name)
+		} else {
+			fmt.Println("There are no files to convert.", loaddir)
+		}
+	} else if NowTarget.Type == "passthrough" {
+		result.createList = append(subdirCreateList, createList...)
+	} else if NowTarget.Type == "test" {
+		// unit tests
+		e := createTest(info, testfiles, loaddir)
+		if e != nil {
+			result.success = false
+			return result, e
+		}
+	} else {
+		//
+		// other...
+		//
+	}
+	if verboseMode == true {
+		fmt.Println(pathname+" create list:", len(result.createList))
+		for _, rc := range result.createList {
+			fmt.Println("    ", rc)
+		}
+	}
+	result.success = true
+	return result, nil
+}
+
+//
 //
 //
 func getList(block []StringList, targetName string) []string {
@@ -1006,279 +1279,6 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 		}
 	}
 	return v.Value, true
-}
-
-//
-// writing rules
-//
-func build(info BuildInfo, pathname string) (result BuildResult, err error) {
-	loaddir := pathname
-	if loaddir == "" {
-		loaddir = "./"
-	} else {
-		loaddir += "/"
-	}
-	if verboseMode == true {
-		fmt.Println(pathname + ": start")
-	}
-	myYaml := loaddir + "make.yml"
-	buf, err := ioutil.ReadFile(myYaml)
-	if err != nil {
-		e := MyError{str: myYaml + ": " + err.Error()}
-		result.success = false
-		return result, e
-	}
-
-	var d Data
-	err = yaml.Unmarshal(buf, &d)
-	if err != nil {
-		e := MyError{str: myYaml + ": " + err.Error()}
-		result.success = false
-		return result, e
-	}
-
-	info.mydir = loaddir
-	//
-	// select target
-	//
-	NowTarget, objsSuffix, ok := getTarget(info, d.Target)
-	if ok == false {
-		e := MyError{str: "No Target"}
-		result.success = false
-		return result, e
-	}
-	if info.target == "" {
-		info.target = NowTarget.Name
-		fmt.Println("gobuild: make target: " + info.target)
-	}
-	info.selectTarget = ""
-
-	if toplevel == true && targetType == "default" {
-		targetType = checkType(d.Variable)
-	}
-	toplevel = false
-	//
-	// get rules
-	//
-	newvar := map[string]string{}
-	for ik, iv := range info.variables {
-		newvar[ik] = iv
-	}
-	info.variables = newvar
-	for _, v := range d.Variable {
-		val, ok := getVariable(info, v)
-		if ok {
-			if v.Name == "enable_response" {
-				if val == "true" {
-					useResponse = true
-				} else if val == "false" {
-					useResponse = false
-				} else {
-					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
-				}
-			} else if v.Name == "response_newline" {
-				if val == "true" {
-					responseNewline = true
-				} else if val == "false" {
-					responseNewline = false
-				} else {
-					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
-				}
-			} else if v.Name == "group_archives" {
-				if val == "true" {
-					groupArchives = true
-				} else if val == "false" {
-					groupArchives = false
-				} else {
-					fmt.Println(" warning: group_archives value [", v.Value, "] is unsupport(true/false)")
-				}
-			}
-			info.variables[v.Name] = val
-		}
-	}
-	optionPrefix := info.variables["option_prefix"]
-	if outputdirSet == false {
-		outputdir += "/" + targetType + "/"
-		if isProduct {
-			outputdir += "Product"
-		} else if isDevelop {
-			outputdir += "Develop"
-		} else if isDevelop {
-			outputdir += "DevelopRelease"
-		} else if isRelease {
-			outputdir += "Release"
-		} else {
-			outputdir += "Debug"
-		}
-		outputdirSet = true
-	}
-
-	info.outputdir = outputdir + "/" + loaddir
-	objdir := outputdir + "/" + loaddir + ".objs" + objsSuffix + "/"
-
-	for _, i := range getList(d.Include, info.target) {
-		if strings.HasPrefix(i, "$output") {
-			i = filepath.Clean(info.outputdir + "output" + i[7:])
-		} else {
-			useRel := i[0] == '$'
-			ii := strings.Index(i, "${")
-			if ii != -1 {
-				i, err = replaceVariable(info, i, ii, false, 0)
-				if err != nil {
-					result.success = false
-					return result, err
-				}
-			}
-			if useRel == false && filepath.IsAbs(i) == false {
-				i = filepath.Clean(loaddir + i)
-			}
-		}
-		if strings.Index(i, " ") != -1 {
-			i = "\"" + i + "\""
-		}
-		info.includes = append(info.includes, optionPrefix+"I"+filepath.ToSlash(i))
-	}
-	for _, d := range getList(d.Define, info.target) {
-		info.defines = append(info.defines, optionPrefix+"D"+d)
-	}
-	for _, o := range getList(d.Option, info.target) {
-		info.options, err = appendOption(info, info.options, o, optionPrefix)
-		if err != nil {
-			result.success = false
-			return result, err
-		}
-	}
-	for _, a := range getList(d.Archive_Option, info.target) {
-		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
-		if err != nil {
-			result.success = false
-			return result, err
-		}
-	}
-	for _, c := range getList(d.Convert_Option, info.target) {
-		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
-		if err != nil {
-			result.success = false
-			return result, err
-		}
-	}
-	for _, l := range getList(d.Link_Option, info.target) {
-		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
-		if err != nil {
-			result.success = false
-			return result, err
-		}
-	}
-	for _, ls := range getList(d.Libraries, info.target) {
-		info.libraries, err = appendOption(info, info.libraries, ls, optionPrefix+"l")
-		if err != nil {
-			result.success = false
-			return result, err
-		}
-	}
-	for _, ld := range getList(d.Link_Depend, info.target) {
-		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
-		if err != nil {
-			result.success = false
-			return result, err
-		}
-	}
-	for _, subninja := range getList(d.SubNinja, info.target) {
-		subNinjaList = append(subNinjaList, subninja)
-	}
-
-	err = createOtherRule(info, d.Other, optionPrefix)
-	if err != nil {
-		return result, err
-	}
-
-	files := getList(d.Source, info.target)
-	cvfiles := getList(d.Convert_List, info.target)
-	testfiles := getList(d.Tests, info.target)
-
-	// sub-directories
-	subdirs := getList(d.Subdir, info.target)
-	subdirCreateList := []string{}
-	for _, s := range subdirs {
-		sd := loaddir + s
-		var r, e = build(info, sd)
-		if r.success == false {
-			return r, e
-		}
-		if len(r.createList) > 0 {
-			subdirCreateList = append(subdirCreateList, r.createList...)
-		}
-	}
-
-	// pre build files
-	err = createPrebuild(info, loaddir, d.Prebuild)
-	if err != nil {
-		return result, err
-	}
-
-	// create compile list
-	createList := []string{}
-	if len(files) > 0 {
-		var e error
-		createList, e = compileFiles(info, objdir, loaddir, files)
-		if e != nil {
-			result.success = false
-			return result, e
-		}
-	}
-
-	if NowTarget.Type == "library" {
-		// archive
-		if len(createList) > 0 {
-			arname, e := createArchive(info, createList, NowTarget.Name)
-			if e != nil {
-				result.success = false
-				return result, e
-			}
-			result.createList = append(subdirCreateList, arname)
-			//fmt.Println(info.archiveOptions+arname+alist)
-		} else {
-			fmt.Println("There are no files to build.", loaddir)
-		}
-	} else if NowTarget.Type == "execute" {
-		// link program
-		if len(createList) > 0 || len(subdirCreateList) > 0 {
-			e := createLink(info, append(createList, subdirCreateList...), NowTarget.Name, NowTarget.Packager)
-			if e != nil {
-				result.success = false
-				return result, e
-			}
-		} else {
-			fmt.Println("There are no files to build.", loaddir)
-		}
-	} else if NowTarget.Type == "convert" {
-		if len(cvfiles) > 0 {
-			createConvert(info, loaddir, cvfiles, NowTarget.Name)
-		} else {
-			fmt.Println("There are no files to convert.", loaddir)
-		}
-	} else if NowTarget.Type == "passthrough" {
-		result.createList = append(subdirCreateList, createList...)
-	} else if NowTarget.Type == "test" {
-		// unit tests
-		e := createTest(info, testfiles, loaddir)
-		if e != nil {
-			result.success = false
-			return result, e
-		}
-	} else {
-		//
-		// other...
-		//
-	}
-	if verboseMode == true {
-		fmt.Println(pathname+" create list:", len(result.createList))
-		for _, rc := range result.createList {
-			fmt.Println("    ", rc)
-		}
-	}
-	result.success = true
-	return result, nil
 }
 
 //
