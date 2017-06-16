@@ -22,7 +22,8 @@ import (
 // global variables
 //
 const (
-	cbuildVersion = "1.0.1"
+	cbuildVersion  = "1.0.2"
+	buildDirectory = "CBuild.dir"
 )
 
 var (
@@ -260,7 +261,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	}
 
 	info.outputdir = filepath.Join(outputdir, loaddir) + "/"
-	objdir := filepath.Clean(filepath.Join(outputdir, loaddir, ".objs"+objsSuffix)) + "/" // Proofs '/' ending
+	objdir := filepath.Clean(filepath.Join(outputdir, loaddir, buildDirectory+objsSuffix)) + "/" // Proofs '/' ending
 
 	for _, pth := range getList(d.Include, info.target) {
 		if strings.HasPrefix(pth, "$output") {
@@ -458,9 +459,6 @@ func getList(block []StringList, targetName string) []string {
 	return lists
 }
 
-//
-// archive objects
-//
 func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 	sl := strings.Split(str, " ")
 	for i, s := range sl {
@@ -474,17 +472,18 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 }
 
 //
-// link objects
+// archive objects
 //
 func createArchive(info BuildInfo, createList []string, targetName string) (string, error) {
 
 	arname := info.outputdir
-	if targetType == "WIN32" {
+	switch targetType {
+	case "WIN32":
 		arname += targetName + ".lib"
-	} else {
-		arname += "lib" + targetName + ".a"
+	default:
+		arname += fmt.Sprintf("lib%s.a", targetName)
 	}
-	arname = filepath.ToSlash(filepath.Clean(arname))
+	arname = normalizePath(arname)
 
 	archiver, e := info.ExpandVariable("archiver")
 	if e != nil {
@@ -504,7 +503,7 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 }
 
 //
-// convert objects
+// link objects
 //
 func createLink(info BuildInfo, createList []string, targetName string, packager Packager) error {
 	trname := info.outputdir + targetName
@@ -512,7 +511,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 	if ok {
 		trname += esuf
 	}
-	trname = filepath.ToSlash(filepath.Clean(trname))
+	trname = normalizePath(trname)
 
 	linker, e := info.ExpandVariable("linker")
 	if e != nil {
@@ -540,7 +539,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 
 	if packager.Target != "" {
 		// package
-		pkgname := filepath.ToSlash(filepath.Clean(filepath.Join(outputdir, targetName, packager.Target)))
+		pkgname := normalizePath(filepath.Join(outputdir, targetName, packager.Target))
 		pkgr, e := info.ExpandVariable("packager")
 		if e != nil {
 			return e
@@ -562,16 +561,15 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 }
 
 //
-// unit tests
+// convert objects
 //
 func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
-	cvname := info.outputdir + targetName
-	cvname = filepath.ToSlash(filepath.Clean(cvname))
+	cvname := normalizePath(info.outputdir + targetName)
 	converter := info.variables["converter"]
 
 	clist := []string{}
 	for _, f := range createList {
-		clist = append(clist, filepath.ToSlash(filepath.Clean(loaddir+f)))
+		clist = append(clist, normalizePath(loaddir+f))
 	}
 
 	cmd := BuildCommand{
@@ -585,7 +583,7 @@ func createConvert(info BuildInfo, loaddir string, createList []string, targetNa
 }
 
 //
-// option
+// unit tests
 //
 func createTest(info BuildInfo, createList []string, loaddir string) error {
 	carg := append(info.includes, info.defines...)
@@ -600,7 +598,7 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 			carg = append(carg, ca)
 		}
 	}
-	objdir := filepath.Join(info.outputdir, ".objs") + "/"
+	objdir := filepath.Join(info.outputdir, buildDirectory) + "/"
 
 	for _, f := range createList {
 		// first, compile a test driver
@@ -612,14 +610,13 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 		if esuf, ok := info.variables["execute_suffix"]; ok {
 			trname += esuf
 		}
-		trname = filepath.ToSlash(filepath.Clean(trname))
-		createLink(info, createList, trname, Packager{})
+		createLink(info, createList, normalizePath(trname), Packager{})
 	}
 	return nil
 }
 
 //
-// target
+// option
 //
 func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
 	for _, so := range strings.Split(optionPrefix+opt, " ") {
@@ -636,6 +633,8 @@ func appendOption(info BuildInfo, lists []string, opt string, optionPrefix strin
 	return lists, nil
 }
 
+//
+// target
 //
 func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 	if info.selectTarget != "" {
@@ -680,7 +679,7 @@ func replacePath(value string, addDir string) (string, string) {
 	if ucmd[0] == '$' {
 		ucmd = ucmd[1:]
 	}
-	p := filepath.ToSlash(filepath.Clean(filepath.Join(addDir, ucmd)))
+	p := normalizePath(filepath.Join(addDir, ucmd))
 	result := p
 	for i, uu := range url {
 		if i > 0 {
@@ -706,12 +705,12 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
 					sabs = strings.Replace(sabs, ":", "$:", 1)
-					sources[i] = filepath.ToSlash(filepath.Clean(sabs))
+					sources[i] = normalizePath(sabs)
 				} else if src == "always" {
 					sources[i] = src + "|"
 				} else {
 					if expanded, err := info.Interpolate(src); err == nil {
-						sources[i] = filepath.ToSlash(filepath.Clean(filepath.Join(loaddir, expanded)))
+						sources[i] = normalizePath(filepath.Join(loaddir, expanded))
 					} else {
 						return err
 					}
@@ -722,7 +721,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				e := errors.New("build command: <" + p.Command + "> is not found.(use by " + p.Name + ")")
 				return e
 			}
-			mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(info.outputdir+p.Command)), "/", "_", -1)
+			mycmd := strings.Replace(normalizePath(info.outputdir+p.Command), "/", "_", -1)
 			deps := []string{}
 
 			if _, af := appendRules[mycmd]; !af {
@@ -761,7 +760,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
 				}
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-				outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
+				outfile = strings.Replace(normalizePath(outfile), ":", "$:", -1)
 				cmd := BuildCommand{
 					Command:          p.Command,
 					CommandType:      mycmd,
@@ -782,7 +781,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 						dst += ext
 					}
 					outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
-					outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
+					outfile = strings.Replace(normalizePath(outfile), ":", "$:", -1)
 					cmd := BuildCommand{
 						Command:          p.Command,
 						CommandType:      mycmd,
@@ -823,9 +822,9 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 			f = filepath.Join(loaddir, f)
 		}
 		f, _ = filepath.Abs(f)
-		sname := strings.Replace(filepath.ToSlash(filepath.Clean(f)), ":", "$:", -1)
-		oname := filepath.ToSlash(filepath.Clean(filepath.Join(objdir, of+".o")))
-		dname := filepath.ToSlash(filepath.Clean(filepath.Join(objdir, of+".d")))
+		sname := strings.Replace(normalizePath(f), ":", "$:", -1)
+		oname := normalizePath(filepath.Join(objdir, of+".o"))
+		dname := normalizePath(filepath.Join(objdir, of+".d"))
 		createList = append(createList, oname)
 
 		carg := []string{}
@@ -907,6 +906,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 	return createList, nil
 }
 
+// Create pre-compiled header if possible.
 func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
@@ -936,7 +936,10 @@ func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) st
 			args = append(args, opt)
 		}
 	}
-	fmt.Printf("PCH: %s\n", strings.Join(args, " "))
+	// PCH source found.
+	if verboseMode {
+		fmt.Printf("PCH: %s\n", strings.Join(args, " "))
+	}
 	cmd := BuildCommand{
 		Command:          compiler,
 		CommandType:      "gen_pch",
@@ -946,18 +949,16 @@ func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) st
 		DepFile:          pchDst + ".dep",
 		NeedCommandAlias: true}
 	commandList = append(commandList, cmd)
-	// PCH source found.
 	return pchDst
 }
 
-//
-// other rule
-//
 func Exists(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil
 }
 
+//
+// other rule
 //
 func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 	for _, ot := range olist {
@@ -1021,7 +1022,6 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 	return nil
 }
 
-//
 func checkType(vlist []Variable) string {
 	for _, v := range vlist {
 		if v.Name == "default_type" {
@@ -1031,9 +1031,6 @@ func checkType(vlist []Variable) string {
 	return "default"
 }
 
-//
-// build main
-//
 func getVariable(info BuildInfo, v Variable) (string, bool) {
 	if v.Type != "" && v.Type != targetType {
 		return "", false
@@ -1061,9 +1058,7 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 	return v.Value, true
 }
 
-//
 // Creates *.ninja file.
-//
 func outputNinja() {
 	exeName := getExeName()
 	if verboseMode {
@@ -1106,14 +1101,11 @@ func outputNinja() {
 			file.WriteString("  depf = " + bs.DepFile + "\n")
 		}
 		if len(bs.Args) > 0 {
-			file.WriteString("  options =")
-			for i, o := range bs.Args {
-				if i&3 == 3 {
-					file.WriteString(" $\n   ")
-				}
-				ostr := strings.Replace(o, ":", "$:", 1)
-				file.WriteString(" " + ostr)
+			tmpLines := make([]string, 0, len(bs.Args))
+			for _, t := range bs.Args {
+				tmpLines = append(tmpLines, strings.Replace(t, ":", "$:", 1))
 			}
+			file.WriteString(fold(tmpLines, 120, "  options ="))
 			file.WriteString("\n")
 		}
 		file.WriteString("  desc = " + bs.OutFile + "\n\n")
@@ -1148,6 +1140,26 @@ func outputNinja() {
 	if verboseMode {
 		fmt.Printf("%s: Renaming %s to %s\n", exeName, tPath.TempOutput, tPath.Output)
 	}
+}
+
+// Construct a properly folded string from `args`.
+func fold(args []string, maxColumns int, prefix string) string {
+	lines := make([]string, 0, 8)
+	line := ""
+	maxcol := maxColumns - len(prefix)
+	emptyPrefix := strings.Repeat(" ", len(prefix))
+	for _, arg := range args {
+		if maxcol < len(line)+1+len(arg) {
+			lines = append(lines, prefix+line)
+			line = ""
+			prefix = emptyPrefix
+		}
+		line += " " + arg
+	}
+	if 0 < len(line) {
+		lines = append(lines, prefix+line)
+	}
+	return strings.Join(lines, " $\n")
 }
 
 // Emits common rules.
@@ -1257,9 +1269,7 @@ build always: phony
 	}
 }
 
-//
 // Creates *.vcxproj (for VisualStudio).
-//
 func outputMSBuild(outdir, projname string) {
 	var targets []string
 
@@ -1276,5 +1286,7 @@ func outputMSBuild(outdir, projname string) {
 	msbuild.ExportProject(targets, outdir, projname)
 }
 
-//
-//
+// Normalizes file path.
+func normalizePath(path string) string {
+	return filepath.ToSlash(filepath.Clean(path))
+}
