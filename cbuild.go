@@ -124,16 +124,15 @@ func main() {
 		linkOptions:    []string{},
 		selectTarget:   targetName,
 		target:         targetName}
-	var r, err = build(buildinfo, "")
-	if r.success == false {
+	if r, err := build(buildinfo, ""); r.success == false {
 		fmt.Printf("%s: error: %s", exeName, err.Error())
 		os.Exit(1)
 	}
-
 	if nlen := len(commandList) + len(otherRuleFileList); nlen <= 0 {
 		fmt.Printf("%s: No commands found.\n", exeName)
 		os.Exit(0)
 	}
+
 	outputNinja()
 
 	if gen_msbuild {
@@ -186,10 +185,9 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	// select target
 	//
 	NowTarget, objsSuffix, ok := getTarget(info, d.Target)
-	if ok == false {
-		e := errors.New("No Target")
+	if !ok {
 		result.success = false
-		return result, e
+		return result, errors.New("No targets.")
 	}
 	if info.target == "" {
 		info.target = NowTarget.Name
@@ -422,7 +420,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 }
 
 //
-//
+// Retrieves items associated to `targetName`.
 //
 func getList(block []StringList, targetName string) []string {
 	lists := []string{}
@@ -461,15 +459,6 @@ func getList(block []StringList, targetName string) []string {
 }
 
 //
-func getReplacedVariable(info BuildInfo, name string) (string, error) {
-	if str, ok := info.variables[name]; ok {
-		return info.Interpolate(str)
-	} else {
-		return "", errors.New("not found variable: " + name)
-	}
-}
-
-//
 // archive objects
 //
 func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
@@ -497,7 +486,7 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 	}
 	arname = filepath.ToSlash(filepath.Clean(arname))
 
-	archiver, e := getReplacedVariable(info, "archiver")
+	archiver, e := info.ExpandVariable("archiver")
 	if e != nil {
 		return "", e
 	}
@@ -525,7 +514,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 	}
 	trname = filepath.ToSlash(filepath.Clean(trname))
 
-	linker, e := getReplacedVariable(info, "linker")
+	linker, e := info.ExpandVariable("linker")
 	if e != nil {
 		return e
 	}
@@ -552,7 +541,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 	if packager.Target != "" {
 		// package
 		pkgname := filepath.ToSlash(filepath.Clean(filepath.Join(outputdir, targetName, packager.Target)))
-		pkgr, e := getReplacedVariable(info, "packager")
+		pkgr, e := info.ExpandVariable("packager")
 		if e != nil {
 			return e
 		}
@@ -812,7 +801,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 // Build command for compiling C, C++...
 func compileFiles(info BuildInfo, objdir string, loaddir string, files []string) (createList []string, e error) {
 
-	compiler, e := getReplacedVariable(info, "compiler")
+	compiler, e := info.ExpandVariable("compiler")
 	if e != nil {
 		return []string{}, e
 	}
