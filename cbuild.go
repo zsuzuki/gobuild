@@ -331,8 +331,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		subNinjaList = append(subNinjaList, subninja)
 	}
 
-	err = createOtherRule(info, d.Other, optionPrefix)
-	if err != nil {
+	if err = createOtherRule(info, d.Other, optionPrefix); err != nil {
 		return result, err
 	}
 
@@ -343,26 +342,25 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	// sub-directories
 	subdirs := getList(d.Subdir, info.target)
 	subdirCreateList := []string{}
+
 	for _, s := range subdirs {
-		sd := loaddir + s
-		var r, e = build(info, sd)
-		if r.success == false {
+		if r, e := build(info, filepath.Join(loaddir, s)); r.success {
+			if 0 < len(r.createList) {
+				subdirCreateList = append(subdirCreateList, r.createList...)
+			}
+		} else {
 			return r, e
-		}
-		if len(r.createList) > 0 {
-			subdirCreateList = append(subdirCreateList, r.createList...)
 		}
 	}
 
 	// pre build files
-	err = createPrebuild(info, loaddir, d.Prebuild)
-	if err != nil {
+	if err = createPrebuild(info, loaddir, d.Prebuild); err != nil {
 		return result, err
 	}
 
 	// create compile list
 	createList := []string{}
-	if len(files) > 0 {
+	if 0 < len(files) {
 		var e error
 		createList, e = compileFiles(info, objdir, loaddir, files)
 		if e != nil {
@@ -371,51 +369,49 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		}
 	}
 
-	if NowTarget.Type == "library" {
+	switch NowTarget.Type {
+	case "library":
 		// archive
-		if len(createList) > 0 {
-			arname, e := createArchive(info, createList, NowTarget.Name)
-			if e != nil {
+		if 0 < len(createList) {
+			if arname, e := createArchive(info, createList, NowTarget.Name); e == nil {
+				result.createList = append(subdirCreateList, arname)
+				//fmt.Println(info.archiveOptions+arname+alist)
+			} else {
 				result.success = false
 				return result, e
 			}
-			result.createList = append(subdirCreateList, arname)
-			//fmt.Println(info.archiveOptions+arname+alist)
 		} else {
 			fmt.Println("There are no files to build.", loaddir)
 		}
-	} else if NowTarget.Type == "execute" {
+	case "execute":
 		// link program
-		if len(createList) > 0 || len(subdirCreateList) > 0 {
-			e := createLink(info, append(createList, subdirCreateList...), NowTarget.Name, NowTarget.Packager)
-			if e != nil {
+		if 0 < len(createList) || 0 < len(subdirCreateList) {
+			if e := createLink(info, append(createList, subdirCreateList...), NowTarget.Name, NowTarget.Packager); e != nil {
 				result.success = false
 				return result, e
 			}
 		} else {
 			fmt.Println("There are no files to build.", loaddir)
 		}
-	} else if NowTarget.Type == "convert" {
-		if len(cvfiles) > 0 {
+	case "convert":
+		if 0 < len(cvfiles) {
 			createConvert(info, loaddir, cvfiles, NowTarget.Name)
 		} else {
 			fmt.Println("There are no files to convert.", loaddir)
 		}
-	} else if NowTarget.Type == "passthrough" {
+	case "passthrough":
 		result.createList = append(subdirCreateList, createList...)
-	} else if NowTarget.Type == "test" {
+	case "test":
 		// unit tests
-		e := createTest(info, testfiles, loaddir)
-		if e != nil {
+		if e := createTest(info, testfiles, loaddir); e != nil {
 			result.success = false
 			return result, e
 		}
-	} else {
-		//
-		// other...
-		//
+	default:
+		/* NO-OP */
 	}
-	if verboseMode == true {
+
+	if verboseMode {
 		fmt.Println(pathname+" create list:", len(result.createList))
 		for _, rc := range result.createList {
 			fmt.Println("    ", rc)
@@ -435,35 +431,29 @@ func getList(block []StringList, targetName string) []string {
 			for _, l := range i.List {
 				lists = append(lists, l)
 			}
-			if isDebug == true {
+			switch {
+			case isDebug:
 				for _, d := range i.Debug {
 					lists = append(lists, d)
 				}
-				continue
-			}
-			if isDevelop == true {
+			case isDevelop:
 				for _, r := range i.Develop {
 					lists = append(lists, r)
 				}
-				continue
-			}
-			if isRelease == true {
+			case isRelease:
 				for _, r := range i.Release {
 					lists = append(lists, r)
 				}
-				continue
-			}
-			if isDevelopRelease == true {
+			case isDevelopRelease:
 				for _, r := range i.DevelopRelease {
 					lists = append(lists, r)
 				}
-				continue
-			}
-			if isProduct == true {
+			case isProduct:
 				for _, r := range i.Product {
 					lists = append(lists, r)
 				}
-				continue
+			default:
+				/* NO-OP */
 			}
 		}
 	}
@@ -472,11 +462,11 @@ func getList(block []StringList, targetName string) []string {
 
 //
 func getReplacedVariable(info BuildInfo, name string) (string, error) {
-	str, ok := info.variables[name]
-	if ok == false {
+	if str, ok := info.variables[name]; ok {
+		return info.Interpolate(str)
+	} else {
 		return "", errors.New("not found variable: " + name)
 	}
-	return info.Interpolate(str)
 }
 
 //
@@ -561,7 +551,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 
 	if packager.Target != "" {
 		// package
-		pkgname := filepath.ToSlash(filepath.Clean(outputdir + "/" + targetName + "/" + packager.Target))
+		pkgname := filepath.ToSlash(filepath.Clean(filepath.Join(outputdir, targetName, packager.Target)))
 		pkgr, e := getReplacedVariable(info, "packager")
 		if e != nil {
 			return e
@@ -611,11 +601,17 @@ func createConvert(info BuildInfo, loaddir string, createList []string, targetNa
 func createTest(info BuildInfo, createList []string, loaddir string) error {
 	carg := append(info.includes, info.defines...)
 	for _, ca := range info.options {
-		if ca != "$out" && ca != "$dep" && ca != "$in" && ca != "-c" { // FIXME.
+		switch ca {
+		case "$out":
+		case "$dep":
+		case "$in":
+		case "-c":
+			/* NO-OP */
+		default:
 			carg = append(carg, ca)
 		}
 	}
-	objdir := info.outputdir + ".objs/"
+	objdir := filepath.Join(info.outputdir, ".objs") + "/"
 
 	for _, f := range createList {
 		// first, compile a test driver
@@ -623,13 +619,12 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
 		trname := strings.TrimSuffix(f, filepath.Ext(f))
-		esuf, ok := info.variables["execute_suffix"]
-		if ok {
+
+		if esuf, ok := info.variables["execute_suffix"]; ok {
 			trname += esuf
 		}
 		trname = filepath.ToSlash(filepath.Clean(trname))
 		createLink(info, createList, trname, Packager{})
-
 	}
 	return nil
 }
@@ -696,7 +691,7 @@ func replacePath(value string, addDir string) (string, string) {
 	if ucmd[0] == '$' {
 		ucmd = ucmd[1:]
 	}
-	p := filepath.ToSlash(filepath.Clean(addDir + ucmd))
+	p := filepath.ToSlash(filepath.Clean(filepath.Join(addDir, ucmd)))
 	result := p
 	for i, uu := range url {
 		if i > 0 {
@@ -712,37 +707,36 @@ func replacePath(value string, addDir string) (string, string) {
 func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 	for _, p := range plist {
 		if (p.Target == "" || p.Target == info.target) && (p.Type == "" || p.Type == targetType) {
-			// regist prebuild
-			srlist := getList(p.Source, info.target)
-			if len(srlist) == 0 {
+			// register prebuild
+			sources := getList(p.Source, info.target)
+			if len(sources) == 0 {
 				e := errors.New("build command: " + p.Name + " is empty source.")
 				return e
 			}
-			for i, src := range srlist {
+			for i, src := range sources {
 				if src[0] == '$' {
-					sabs, _ := filepath.Abs(info.outputdir + "output/" + src[1:])
+					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
 					sabs = strings.Replace(sabs, ":", "$:", 1)
-					srlist[i] = filepath.ToSlash(filepath.Clean(sabs))
+					sources[i] = filepath.ToSlash(filepath.Clean(sabs))
 				} else if src == "always" {
-					srlist[i] = src + "|"
+					sources[i] = src + "|"
 				} else {
-					var err error
-					src, err = info.Interpolate(src)
-					if err != nil {
+					if expanded, err := info.Interpolate(src); err == nil {
+						sources[i] = filepath.ToSlash(filepath.Clean(filepath.Join(loaddir, expanded)))
+					} else {
 						return err
 					}
-					srlist[i] = filepath.ToSlash(filepath.Clean(loaddir + src))
 				}
 			}
 			ur, ok := info.variables[p.Command]
-			if ok == false {
+			if !ok {
 				e := errors.New("build command: <" + p.Command + "> is not found.(use by " + p.Name + ")")
 				return e
 			}
 			mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(info.outputdir+p.Command)), "/", "_", -1)
 			deps := []string{}
-			_, af := appendRules[mycmd]
-			if af == false {
+
+			if _, af := appendRules[mycmd]; !af {
 				ur = strings.Replace(ur, "${selfdir}", loaddir, -1)
 				var err error
 				ur, err = info.Interpolate(ur)
@@ -777,19 +771,20 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				if pn[0] == '$' {
 					pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
 				}
-				outfile, _ := filepath.Abs(info.outputdir + pn)
+				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
 				outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
 				cmd := BuildCommand{
 					Command:          p.Command,
 					CommandType:      mycmd,
 					Depends:          deps,
-					InFiles:          srlist,
+					InFiles:          sources,
 					OutFile:          outfile,
 					NeedCommandAlias: false}
 				commandList = append(commandList, cmd)
 			} else {
+				// Found `$...`
 				ext := p.Name[1:] //filepath.Ext(p.Name)
-				for _, src := range srlist {
+				for _, src := range sources {
 					dst := filepath.Base(src)
 					next := filepath.Ext(src)
 					if next != "" {
@@ -797,7 +792,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					} else {
 						dst += ext
 					}
-					outfile, _ := filepath.Abs(info.outputdir + "output/" + dst)
+					outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
 					outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
 					cmd := BuildCommand{
 						Command:          p.Command,
@@ -814,7 +809,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 	return nil
 }
 
-// Creates pre-compiled header if `precompile.hpp` exists.
+// Build command for compiling C, C++...
 func compileFiles(info BuildInfo, objdir string, loaddir string, files []string) (createList []string, e error) {
 
 	compiler, e := getReplacedVariable(info, "compiler")
@@ -822,7 +817,8 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 		return []string{}, e
 	}
 
-	createList = append(createList, createPCH(info, objdir, loaddir, compiler)...)
+	pchFile := createPCH(info, objdir, loaddir, compiler)
+
 	arg1 := append(info.includes, info.defines...)
 
 	for _, f := range files {
@@ -833,42 +829,33 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 			} else {
 				of = f[1:]
 			}
-			f = info.outputdir + of
+			f = filepath.Join(info.outputdir, of)
 		} else {
-			f = loaddir + f
+			f = filepath.Join(loaddir, f)
 		}
 		f, _ = filepath.Abs(f)
 		sname := strings.Replace(filepath.ToSlash(filepath.Clean(f)), ":", "$:", -1)
-		oname := filepath.ToSlash(filepath.Clean(objdir + of + ".o"))
-		dname := filepath.ToSlash(filepath.Clean(objdir + of + ".d"))
+		oname := filepath.ToSlash(filepath.Clean(filepath.Join(objdir, of+".o")))
+		dname := filepath.ToSlash(filepath.Clean(filepath.Join(objdir, of+".d")))
 		createList = append(createList, oname)
 
 		carg := []string{}
 		carg = append(carg, arg1...)
 		for _, ca := range info.options {
-			if ca == "$out" {
+			switch ca {
+			case "$out":
 				ca = oname
-			} else if ca == "$dep" {
+			case "$dep":
 				ca = dname
-			} else if ca == "$in" {
+			case "$in":
 				ca = sname
+			default:
+				/* NO-OP */
 			}
 			carg = append(carg, ca)
 		}
 		ext := filepath.Ext(f)
-		rule, ok := otherRuleList[ext]
-		if ok == false {
-			// normal
-			cmd := BuildCommand{
-				Command:          compiler,
-				CommandType:      "compile",
-				Args:             carg,
-				InFiles:          []string{sname},
-				OutFile:          oname,
-				DepFile:          dname,
-				NeedCommandAlias: true}
-			commandList = append(commandList, cmd)
-		} else {
+		if rule, exists := otherRuleList[ext]; exists {
 			// custom
 			linc := ""
 			ldef := ""
@@ -911,28 +898,67 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 			} else {
 				fmt.Println("compiler:", rule.Compiler, "is not found. in ["+info.mydir+"make.yml].")
 			}
+		} else {
+			// normal
+			cmd := BuildCommand{
+				Command:          compiler,
+				CommandType:      "compile",
+				Args:             carg,
+				InFiles:          []string{sname},
+				OutFile:          oname,
+				DepFile:          dname,
+				NeedCommandAlias: true}
+			if 0 < len(pchFile) {
+				cmd.ImplicitDepends = append(cmd.ImplicitDepends, pchFile)
+				cmd.Args = append(cmd.Args, "-include-pch", pchFile)
+			}
+			commandList = append(commandList, cmd)
 		}
 	}
-
 	return createList, nil
 }
 
-func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) []string {
+func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
-	pchSrc := filepath.Join(srcdir, pchName)
+	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
 	if !Exists(pchSrc) {
 		if verboseMode {
 			fmt.Println(pchSrc + " does not exists.")
 		}
-		return []string{}
+		return ""
 	}
 	if verboseMode {
 		fmt.Println(pchSrc + " found.")
 	}
-	pchDst := filepath.Join(dstdir, pchName+".pch")
-	fmt.Println("Create " + pchDst)
+	pchDst := filepath.ToSlash(filepath.Join(dstdir, pchName+".pch"))
+	if verboseMode {
+		fmt.Println("Create " + pchDst)
+	}
+	args := append(info.includes, info.defines...)
+	for _, opt := range info.options {
+		switch opt {
+		case "$out":
+			args = append(args, pchDst)
+		case "$dep":
+			args = append(args, pchDst+".dep")
+		case "$in":
+			args = append(args, pchSrc)
+		default:
+			args = append(args, opt)
+		}
+	}
+	fmt.Printf("PCH: %s\n", strings.Join(args, " "))
+	cmd := BuildCommand{
+		Command:          compiler,
+		CommandType:      "gen_pch",
+		Args:             args,
+		InFiles:          []string{pchSrc},
+		OutFile:          pchDst,
+		DepFile:          pchDst + ".dep",
+		NeedCommandAlias: true}
+	commandList = append(commandList, cmd)
 	// PCH source found.
-	return []string{}
+	return pchDst
 }
 
 //
@@ -965,8 +991,9 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 		needOption := false
 		needDefine := false
 		rule, ok := otherRuleList[ext]
-		if ok == false {
-
+		if ok {
+			rule.Options = append(rule.Options, olist...)
+		} else {
 			// no exist rule
 			cmdl := strings.Split(ot.Command, " ")
 			compiler := ""
@@ -999,8 +1026,6 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 				needOption:  needOption,
 				needDefine:  needDefine,
 				NeedDepend:  ot.needDependend}
-		} else {
-			rule.Options = append(rule.Options, olist...)
 		}
 		otherRuleList[ext] = rule
 	}
@@ -1076,6 +1101,12 @@ func outputNinja() {
 		for _, dep := range bs.Depends {
 			depstr := strings.Replace(dep, ":", "$:", 1)
 			file.WriteString(" $\n  " + depstr)
+		}
+		if 0 < len(bs.ImplicitDepends) {
+			file.WriteString(" $\n  | " + strings.Replace(bs.ImplicitDepends[0], ":", "$:", 1))
+			for _, dep := range bs.ImplicitDepends[1:] {
+				file.WriteString(" $\n    " + strings.Replace(dep, ":", "$:", 1))
+			}
 		}
 		if bs.NeedCommandAlias {
 			file.WriteString("\n  " + bs.CommandType + " = " + bs.Command + "\n")
@@ -1158,7 +1189,9 @@ rule compile
 {{- if .UsePCH}}
 rule gen_pch
     description = Create PCH: $desc
-    command = $compile $options -x c++header -o $out $in
+    command = $gen_pch $options -x c++-header -o $out $in
+    depfile = $depf
+    deps = gcc
 {{- end}}
 rule ar
     description = Archiving: $desc

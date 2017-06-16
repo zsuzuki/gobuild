@@ -122,6 +122,7 @@ type BuildCommand struct {
 	OutFile          string
 	DepFile          string
 	Depends          []string
+	ImplicitDepends  []string
 	NeedCommandAlias bool
 }
 
