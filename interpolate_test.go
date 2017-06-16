@@ -70,8 +70,15 @@ func (suite *InterpolateTestSuite) TestUnmatchedError() {
 }
 
 func (suite *InterpolateTestSuite) TestInvalidError() {
-	_, err := Interpolate("$foo", suite.VariableDictionary)
-	assert.EqualError(suite.T(), err, "Invalid `$` sequence \"foo\" found.")
+	actual, err := Interpolate("$foo", suite.VariableDictionary)
+	if assert.NoError(suite.T (), err) {
+		assert.Equal (suite.T (), actual, "$foo")
+	}
+}
+
+func (suite *InterpolateTestSuite) TestInvalidErrorStrict() {
+	_, err := StrictInterpolate("$foo", suite.VariableDictionary)
+	assert.EqualError(suite.T (), err, "Invalid `$` sequence \"foo\" found.")
 }
 
 func (suite *InterpolateTestSuite) TestRecursion() {
@@ -87,7 +94,7 @@ func (suite *InterpolateTestSuite) TestNonExistent() {
 }
 
 func (suite *InterpolateTestSuite) TestNonExistentWithStrict () {
-	_, err := InterpolateStrict("${mokeke}moke", suite.VariableDictionary)
+	_, err := StrictInterpolate("${mokeke}moke", suite.VariableDictionary)
 	assert.EqualError(suite.T(), err, "Unknown reference ${mokeke} found.")
 }
 

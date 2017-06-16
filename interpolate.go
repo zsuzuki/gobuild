@@ -28,7 +28,7 @@ func Interpolate(s string, dict map[string]string) (string, error) {
 
 // Interplates supplied `s` using `dict`.
 // If `s` contains unknown reference, treat it as an error.
-func InterpolateStrict (s string, dict map [string]string) (string, error) {
+func StrictInterpolate(s string, dict map [string]string) (string, error) {
 	return interpolate("", s, dict, 0, true)
 }
 
@@ -62,8 +62,12 @@ func interpolate(accum string, rest string, dict map[string]string, limit int, s
 		case '$':
 			return interpolate(accum+"$", r[sz:], dict, limit+1, strict)
 		default:
-			// Invalid $... sequence
-			return accum, errors.New(fmt.Sprintf("Invalid `$` sequence \"%s\" found.", r))
+			if strict {
+				// Invalid $... sequence
+				return accum, errors.New(fmt.Sprintf("Invalid `$` sequence \"%s\" found.", r))
+			}
+			// Treat it as is...
+			return interpolate (accum + "$", r, dict, limit +1, false)
 		}
 	} else {
 		// No `$` in `s`
