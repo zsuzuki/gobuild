@@ -50,3 +50,22 @@ func (info *BuildInfo) AddDefines(def string) {
 	pfx := info.OptionPrefix()
 	info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, def))
 }
+
+// Interpolates given string `s`.
+// Note: Handles $out, $in...
+func (info *BuildInfo) Interpolate (s string) (string, error){
+	if idx := strings.Index(s, "${"); 0 <= idx {
+		expanded, err := Interpolate(s[idx:], info.variables)
+		if err != nil {
+			return "", err
+		}
+		return s[:idx] + expanded, nil
+	}
+	return s, nil
+}
+
+// Strictly interpolates given string `s`.
+// Note: Handles $out, $in...
+func (info *BuildInfo) StrictInterpolate (s string) (string, error){
+	return Interpolate(s, info.variables)
+}

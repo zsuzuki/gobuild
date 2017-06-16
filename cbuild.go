@@ -260,24 +260,22 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	info.outputdir = filepath.Join(outputdir, loaddir) + "/"
 	objdir := filepath.Clean(filepath.Join(outputdir, loaddir, ".objs"+objsSuffix)) + "/" // Proofs '/' ending
 
-	for _, i := range getList(d.Include, info.target) {
-		if strings.HasPrefix(i, "$output") {
-			i = filepath.Clean(filepath.Join(info.outputdir, "output"+i[7:]))
+	for _, pth := range getList(d.Include, info.target) {
+		if strings.HasPrefix(pth, "$output") {
+			pth = filepath.Clean(filepath.Join(info.outputdir, "output"+pth[7:]))
 		} else {
-			useRel := i[0] == '$'
-			ii := strings.Index(i, "${")
-			if ii != -1 {
-				i, err = replaceVariable(info, i, ii, false, 0)
-				if err != nil {
-					result.success = false
-					return result, err
-				}
+			useRel := pth[0] == '$'
+			var err error
+			pth, err = info.StrictInterpolate(pth)
+			if err != nil {
+				result.success = false
+				return result, err
 			}
-			if useRel == false && filepath.IsAbs(i) == false {
-				i = filepath.Clean(filepath.Join(loaddir, i))
+			if useRel == false && filepath.IsAbs(pth) == false {
+				pth = filepath.Clean(filepath.Join(loaddir, pth))
 			}
 		}
-		info.AddInclude(i)
+		info.AddInclude(pth)
 	}
 	for _, d := range getList(d.Define, info.target) {
 		info.AddDefines(d)
@@ -474,13 +472,7 @@ func getReplacedVariable(info BuildInfo, name string) (string, error) {
 	if ok == false {
 		return "", errors.New("not found variable: " + name)
 	}
-	si := strings.Index(str, "${")
-	if si != -1 {
-		var e error
-		str, e = replaceVariable(info, str, si, true, 0)
-		return str, e
-	}
-	return str, nil
+	return info.Interpolate(str)
 }
 
 //
@@ -489,15 +481,11 @@ func getReplacedVariable(info BuildInfo, name string) (string, error) {
 func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 	sl := strings.Split(str, " ")
 	for i, s := range sl {
-		si := strings.Index(s, "${")
-		if si != -1 {
-			var e error
-			s, e = replaceVariable(info, s, si, true, 0)
-			if e != nil {
-				return []string{}, e
-			}
-			sl[i] = s
+		expanded, err := info.Interpolate(s)
+		if err != nil {
+			return []string{}, err
 		}
+		sl [i] = expanded
 	}
 	return sl, nil
 }
@@ -647,13 +635,10 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 //
 func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
 	for _, so := range strings.Split(optionPrefix+opt, " ") {
-		si := strings.Index(so, "${")
-		if si != -1 {
-			var e error
-			so, e = replaceVariable(info, so, si, false, 0)
-			if e != nil {
-				return lists, e
-			}
+		var err error
+		so, err = info.StrictInterpolate(so)
+		if err != nil {
+			return lists, err
 		}
 		if strings.Index(so, " ") != -1 {
 			so = "\"" + so + "\""
@@ -718,46 +703,6 @@ func replacePath(value string, addDir string) (string, string) {
 }
 
 //
-// pre build
-//
-func replaceVariable(info BuildInfo, str string, start int, noError bool, nest int) (string, error) {
-	src := strings.Split(str[start+2:], "${")
-	ret := str[:start]
-	for _, s := range src {
-		br := strings.Index(s, "}")
-		if br == -1 {
-			e := errors.New("variable not close ${name}. \"${" + s + "\" in [" + info.mydir + "make.yml].")
-			return "", e
-		}
-		vname := s[:br]
-		v, ok := info.variables[vname]
-		if ok == false {
-			if noError {
-				v = ""
-			} else {
-				e := errors.New("variable <" + vname + "> is not found in [" + info.mydir + "make.yml].")
-				return "", e
-			}
-		}
-		ret += v + s[br+1:]
-	}
-	retv := strings.Index(ret, "${")
-	if retv != -1 {
-		var e error
-		if nest < 8 {
-			ret, e = replaceVariable(info, ret, retv, noError, nest+1)
-			if e != nil {
-				return "", e
-			}
-		} else {
-			e = errors.New("variable<" + ret + "> nest is too deep.")
-			return "", e
-		}
-	}
-	return ret, nil
-}
-
-//
 // compile files
 //
 func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
@@ -777,13 +722,10 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				} else if src == "always" {
 					srlist[i] = src + "|"
 				} else {
-					six := strings.Index(src, "${")
-					if six != -1 {
-						var e error
-						src, e = replaceVariable(info, src, six, true, 0)
-						if e != nil {
-							return e
-						}
+					var err error
+					src, err = info.Interpolate(src)
+					if err != nil {
+						return err
 					}
 					srlist[i] = filepath.ToSlash(filepath.Clean(loaddir + src))
 				}
@@ -798,15 +740,11 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			_, af := appendRules[mycmd]
 			if af == false {
 				ur = strings.Replace(ur, "${selfdir}", loaddir, -1)
-				ev := strings.Index(ur, "${")
-				if ev != -1 {
-					var e error
-					ur, e = replaceVariable(info, ur, ev, true, 0)
-					if e != nil {
-						return e
-					}
+				var err error
+				ur, err = info.Interpolate(ur)
+				if err != nil {
+					return err
 				}
-
 				if ur[0] == '$' {
 					r, d := replacePath(ur, info.outputdir)
 					abs, _ := filepath.Abs(d)
@@ -948,13 +886,10 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 			}
 			compiler, ok := info.variables[rule.Compiler]
 			if ok == true {
-				cvi := strings.Index(compiler, "${")
-				if cvi != -1 {
-					var e error
-					compiler, e = replaceVariable(info, compiler, cvi, true, 0)
-					if e != nil {
-						return []string{}, e
-					}
+				var err error
+				compiler, err = info.Interpolate(compiler)
+				if err != nil {
+					return []string{}, err
 				}
 				ocmd := OtherRuleFile{
 					rule:     "compile" + ext,
