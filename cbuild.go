@@ -185,7 +185,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	//
 	// select target
 	//
-	NowTarget, objsSuffix, ok := getTarget(info, d.Target)
+	NowTarget, _, ok := getTarget(info, d.Target)
 	if !ok {
 		result.success = false
 		return result, errors.New("No targets.")
@@ -260,8 +260,9 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		outputdirSet = true
 	}
 
-	info.outputdir = filepath.Join(outputdir, loaddir) + "/"
-	objdir := filepath.Clean(filepath.Join(outputdir, loaddir, buildDirectory+objsSuffix)) + "/" // Proofs '/' ending
+	info.outputdir = normalizePath(filepath.Join(outputdir, loaddir)) + "/" // Proofs '/' ending
+
+	//objdir := filepath.Clean(filepath.Join(outputdir, loaddir, buildDirectory+objsSuffix)) + "/" // Proofs '/' ending
 
 	for _, pth := range getList(d.Include, info.target) {
 		if strings.HasPrefix(pth, "$output") {
@@ -361,7 +362,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	createList := []string{}
 	if 0 < len(files) {
 		var e error
-		createList, e = compileFiles(info, objdir, loaddir, files)
+		createList, e = compileFiles(info, loaddir, files)
 		if e != nil {
 			result.success = false
 			return result, e
@@ -476,12 +477,12 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 //
 func createArchive(info BuildInfo, createList []string, targetName string) (string, error) {
 
-	arname := info.outputdir
+	var arname string
 	switch targetType {
 	case "WIN32":
-		arname += targetName + ".lib"
+		arname = filepath.Join(info.outputdir, targetName+".lib")
 	default:
-		arname += fmt.Sprintf("lib%s.a", targetName)
+		arname = filepath.Join(info.outputdir, fmt.Sprintf("lib%s.a", targetName))
 	}
 	arname = normalizePath(arname)
 
@@ -506,7 +507,7 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 // link objects
 //
 func createLink(info BuildInfo, createList []string, targetName string, packager Packager) error {
-	trname := info.outputdir + targetName
+	trname := filepath.Join (info.outputdir, targetName)
 	esuf, ok := info.variables["execute_suffix"]
 	if ok {
 		trname += esuf
@@ -564,7 +565,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 // convert objects
 //
 func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
-	cvname := normalizePath(info.outputdir + targetName)
+	cvname := normalizePath(filepath.Join (info.outputdir, targetName))
 	converter := info.variables["converter"]
 
 	clist := []string{}
@@ -598,11 +599,12 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 			carg = append(carg, ca)
 		}
 	}
-	objdir := filepath.Join(info.outputdir, buildDirectory) + "/"
+	//objdir := filepath.Join(info.outputdir, buildDirectory) + "/"
+	//objdir := info.outputdir
 
 	for _, f := range createList {
 		// first, compile a test driver
-		createList, _ = compileFiles(info, objdir, loaddir, []string{f})
+		createList, _ = compileFiles(info, loaddir, []string{f})
 
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
 		trname := strings.TrimSuffix(f, filepath.Ext(f))
@@ -721,7 +723,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				e := errors.New("build command: <" + p.Command + "> is not found.(use by " + p.Name + ")")
 				return e
 			}
-			mycmd := strings.Replace(normalizePath(info.outputdir+p.Command), "/", "_", -1)
+			mycmd := strings.Replace(normalizePath(filepath.Join (info.outputdir, p.Command)), "/", "_", -1)
 			deps := []string{}
 
 			if _, af := appendRules[mycmd]; !af {
@@ -798,19 +800,20 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 }
 
 // Build command for compiling C, C++...
-func compileFiles(info BuildInfo, objdir string, loaddir string, files []string) (createList []string, e error) {
+func compileFiles(info BuildInfo, loaddir string, files []string) (createList []string, e error) {
 
 	compiler, e := info.ExpandVariable("compiler")
 	if e != nil {
 		return []string{}, e
 	}
 
-	pchFile := createPCH(info, objdir, loaddir, compiler)
+	pchFile := createPCH(info, loaddir, compiler)
 
 	arg1 := append(info.includes, info.defines...)
 
 	for _, f := range files {
 		of := f
+		var objdir string
 		if f[0] == '$' {
 			if strings.HasPrefix(f, "$target/") {
 				of = strings.Replace(of, "$target/", "/."+info.target+"/", 1)
@@ -818,8 +821,12 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 				of = f[1:]
 			}
 			f = filepath.Join(info.outputdir, of)
+			objdir = normalizePath(filepath.Join(filepath.Dir(f), buildDirectory))
 		} else {
-			f = filepath.Join(loaddir, f)
+			tf := filepath.Join(loaddir, f)
+			objdir = normalizePath(filepath.Join(filepath.Dir(filepath.Join(info.outputdir, f)), buildDirectory))
+			of = filepath.Base(tf)
+			f = tf
 		}
 		f, _ = filepath.Abs(f)
 		sname := strings.Replace(normalizePath(f), ":", "$:", -1)
@@ -907,7 +914,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 }
 
 // Create pre-compiled header if possible.
-func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) string {
+func createPCH(info BuildInfo, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
 	if !Exists(pchSrc) {
@@ -919,6 +926,7 @@ func createPCH(info BuildInfo, dstdir string, srcdir string, compiler string) st
 	if verboseMode {
 		fmt.Println(pchSrc + " found.")
 	}
+	dstdir := filepath.Join(info.outputdir, srcdir, buildDirectory)
 	pchDst := filepath.ToSlash(filepath.Join(dstdir, pchName+".pch"))
 	if verboseMode {
 		fmt.Println("Create " + pchDst)
