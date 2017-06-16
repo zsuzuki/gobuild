@@ -507,7 +507,7 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 // link objects
 //
 func createLink(info BuildInfo, createList []string, targetName string, packager Packager) error {
-	trname := filepath.Join (info.outputdir, targetName)
+	trname := filepath.Join(info.outputdir, targetName)
 	esuf, ok := info.variables["execute_suffix"]
 	if ok {
 		trname += esuf
@@ -565,7 +565,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 // convert objects
 //
 func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
-	cvname := normalizePath(filepath.Join (info.outputdir, targetName))
+	cvname := normalizePath(filepath.Join(info.outputdir, targetName))
 	converter := info.variables["converter"]
 
 	clist := []string{}
@@ -723,7 +723,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				e := errors.New("build command: <" + p.Command + "> is not found.(use by " + p.Name + ")")
 				return e
 			}
-			mycmd := strings.Replace(normalizePath(filepath.Join (info.outputdir, p.Command)), "/", "_", -1)
+			mycmd := strings.Replace(normalizePath(filepath.Join(info.outputdir, p.Command)), "/", "_", -1)
 			deps := []string{}
 
 			if _, af := appendRules[mycmd]; !af {
@@ -1023,7 +1023,7 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
-				NeedDepend:  ot.needDependend}
+				NeedDepend:  ot.Need_Depend}
 		}
 		otherRuleList[ext] = rule
 	}
