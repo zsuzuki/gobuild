@@ -78,19 +78,6 @@ type Data struct {
 }
 
 //
-// error
-//
-
-// MyError is override error in application
-type MyError struct {
-	str string
-}
-
-func (m MyError) Error() string {
-	return m.str
-}
-
-//
 // build information
 //
 

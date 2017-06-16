@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -167,7 +168,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	myYaml := filepath.Join(loaddir, "make.yml")
 	buf, err := ioutil.ReadFile(myYaml)
 	if err != nil {
-		e := MyError{str: myYaml + ": " + err.Error()}
+		e := errors.New(myYaml + ": " + err.Error())
 		result.success = false
 		return result, e
 	}
@@ -175,7 +176,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	var d Data
 	err = yaml.Unmarshal(buf, &d)
 	if err != nil {
-		e := MyError{str: myYaml + ": " + err.Error()}
+		e := errors.New(myYaml + ": " + err.Error())
 		result.success = false
 		return result, e
 	}
@@ -186,7 +187,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	//
 	NowTarget, objsSuffix, ok := getTarget(info, d.Target)
 	if ok == false {
-		e := MyError{str: "No Target"}
+		e := errors.New("No Target")
 		result.success = false
 		return result, e
 	}
@@ -471,7 +472,7 @@ func getList(block []StringList, targetName string) []string {
 func getReplacedVariable(info BuildInfo, name string) (string, error) {
 	str, ok := info.variables[name]
 	if ok == false {
-		return "", MyError{"not found variable: " + name}
+		return "", errors.New("not found variable: " + name)
 	}
 	si := strings.Index(str, "${")
 	if si != -1 {
@@ -645,8 +646,7 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 // target
 //
 func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
-	sl := strings.Split(optionPrefix+opt, " ")
-	for _, so := range sl {
+	for _, so := range strings.Split(optionPrefix+opt, " ") {
 		si := strings.Index(so, "${")
 		if si != -1 {
 			var e error
@@ -726,7 +726,7 @@ func replaceVariable(info BuildInfo, str string, start int, noError bool, nest i
 	for _, s := range src {
 		br := strings.Index(s, "}")
 		if br == -1 {
-			e := MyError{str: "variable not close ${name}. \"${" + s + "\" in [" + info.mydir + "make.yml]."}
+			e := errors.New("variable not close ${name}. \"${" + s + "\" in [" + info.mydir + "make.yml].")
 			return "", e
 		}
 		vname := s[:br]
@@ -735,7 +735,7 @@ func replaceVariable(info BuildInfo, str string, start int, noError bool, nest i
 			if noError {
 				v = ""
 			} else {
-				e := MyError{str: "variable <" + vname + "> is not found in [" + info.mydir + "make.yml]."}
+				e := errors.New("variable <" + vname + "> is not found in [" + info.mydir + "make.yml].")
 				return "", e
 			}
 		}
@@ -750,7 +750,7 @@ func replaceVariable(info BuildInfo, str string, start int, noError bool, nest i
 				return "", e
 			}
 		} else {
-			e = MyError{str: "variable<" + ret + "> nest is too deep."}
+			e = errors.New("variable<" + ret + "> nest is too deep.")
 			return "", e
 		}
 	}
@@ -766,7 +766,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			// regist prebuild
 			srlist := getList(p.Source, info.target)
 			if len(srlist) == 0 {
-				e := MyError{str: "build command: " + p.Name + " is empty source."}
+				e := errors.New("build command: " + p.Name + " is empty source.")
 				return e
 			}
 			for i, src := range srlist {
@@ -790,7 +790,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			}
 			ur, ok := info.variables[p.Command]
 			if ok == false {
-				e := MyError{str: "build command: <" + p.Command + "> is not found.(use by " + p.Name + ")"}
+				e := errors.New("build command: <" + p.Command + "> is not found.(use by " + p.Name + ")")
 				return e
 			}
 			mycmd := strings.Replace(filepath.ToSlash(filepath.Clean(info.outputdir+p.Command)), "/", "_", -1)

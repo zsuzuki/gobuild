@@ -13,7 +13,11 @@ type InterpolateTestSuite struct {
 }
 
 func (suite *InterpolateTestSuite) SetupTest() {
-	suite.VariableDictionary = map[string]string{"foo": "foo-value", "bar": "bar-value, ${foo}", "baz": "baz-value, ${bar}"}
+	suite.VariableDictionary = map[string]string{
+		"foo": "foo-value",
+		"bar": "bar-value, ${foo}",
+		"baz": "baz-value, ${bar}",
+		"rec": "do${rec}"}
 }
 
 // Interpolate empty string
@@ -62,12 +66,29 @@ func (suite *InterpolateTestSuite) TestDoubleDoller() {
 
 func (suite *InterpolateTestSuite) TestUnmatchedError() {
 	_, err := Interpolate("${foo", suite.VariableDictionary)
-	assert.Error(suite.T(), err)
+	assert.EqualError(suite.T(), err, "Unmatched `{` found after \"{foo\".")
 }
 
 func (suite *InterpolateTestSuite) TestInvalidError() {
 	_, err := Interpolate("$foo", suite.VariableDictionary)
-	assert.Error(suite.T(), err)
+	assert.EqualError(suite.T(), err, "Invalid `$` sequence \"foo\" found.")
+}
+
+func (suite *InterpolateTestSuite) TestRecursion() {
+	_, err := Interpolate("${rec}", suite.VariableDictionary)
+	assert.EqualError(suite.T(), err, "Recursion limit exceeded.")
+}
+
+func (suite *InterpolateTestSuite) TestNonExistent() {
+	actual, err := Interpolate("${mokeke}moke", suite.VariableDictionary)
+	if assert.NoError(suite.T(), err) {
+		assert.Equal(suite.T(), actual, "moke")
+	}
+}
+
+func (suite *InterpolateTestSuite) TestNonExistentWithStrict () {
+	_, err := InterpolateStrict("${mokeke}moke", suite.VariableDictionary)
+	assert.EqualError(suite.T(), err, "Unknown reference ${mokeke} found.")
 }
 
 func TestInterpolateSuite(t *testing.T) {
