@@ -210,32 +210,36 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	}
 	info.variables = newvar
 	for _, v := range d.Variable {
-		val, ok := getVariable(info, v)
-		if ok {
-			if v.Name == "enable_response" {
-				if val == "true" {
+		if val, ok := getVariable(info, v); ok {
+			switch v.Name {
+			case "enable_response":
+				switch val {
+				case "true":
 					useResponse = true
-				} else if val == "false" {
+				case "false":
 					useResponse = false
-				} else {
-					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
+				default:
+					fmt.Printf("warning: Unrecognized value [%s] for `enable_response`\n", v.Value)
 				}
-			} else if v.Name == "response_newline" {
-				if val == "true" {
+			case "response_newline":
+				switch val {
+				case "true":
 					responseNewline = true
-				} else if val == "false" {
+				case "false":
 					responseNewline = false
-				} else {
-					fmt.Println(" warning: link_response value [", v.Value, "] is unsupport(true/false)")
+				default:
+					fmt.Printf("warning: Unrecognized value [%s] for `response_newline`\n", v.Value)
 				}
-			} else if v.Name == "group_archives" {
-				if val == "true" {
+			case "group_archives":
+				switch val {
+				case "true":
 					groupArchives = true
-				} else if val == "false" {
+				case "false":
 					groupArchives = false
-				} else {
-					fmt.Println(" warning: group_archives value [", v.Value, "] is unsupport(true/false)")
+				default:
+					fmt.Printf("warning: Unrecognized value [%s] for `group_archives`\n", v.Value)
 				}
+			default: /* NO-OP */
 			}
 			info.variables[v.Name] = val
 		}
@@ -485,7 +489,7 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 		if err != nil {
 			return []string{}, err
 		}
-		sl [i] = expanded
+		sl[i] = expanded
 	}
 	return sl, nil
 }
