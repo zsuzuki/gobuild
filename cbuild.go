@@ -69,12 +69,12 @@ type Build struct {
 
 // Other make.yml other section
 type Other struct {
-	Ext           string
-	Command       string
-	Description   string
-	needDependend bool
-	Type          string
-	Option        []StringList `yaml:",flow"`
+	Ext         string
+	Command     string
+	Description string
+	Need_Depend bool
+	Type        string
+	Option      []StringList `yaml:",flow"`
 }
 
 // Data format make.yml top structure
@@ -827,7 +827,7 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
-				needDepend:  ot.needDependend}
+				needDepend:  ot.Need_Depend}
 		} else {
 			rule.option = append(rule.option, olist...)
 		}
