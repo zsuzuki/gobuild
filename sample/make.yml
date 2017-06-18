@@ -1,32 +1,25 @@
 #
-#
+# sample build
 #
 
 variable:
 # default
-- name: compiler
-  value: ${tool_path}clang++
-- name: archiver
-  value: ${tool_path}ar
-- name: archiver
-  value: ${tool_path}llvm-ar
-  type: winclang
-- name: linker
-  value: ${tool_path}clang++
-- name: compiler.c
-  value: ${tool_path}clang
-- name: packager
-  value: cp
+- {name: compiler,   value: "${tool_path}clang++"}
+- {name: archiver,   value: "${tool_path}ar"}
+- {name: archiver,   value: "${tool_path}llvm-ar", type: winclang}
+- {name: archiver,   value: "${tool_path}llvm-ar", type: LINUX}
+- {name: linker,     value: "${tool_path}clang++"}
+- {name: compiler.c, value: "${tool_path}clang"}
+- {name: packager,   value: "cp"}
 
-- name: execute_suffix
-  value: .elf
-- name: tool_suffix
-  value: .exe
+- {name: execute_suffix, value: ".elf"}
+- {name: tool_suffix,    value: ".exe", type: winclang}
+
+# for Linux clang
+- {name: tool_path, value: "/opt/clang/bin/", type: LINUX}
 
 # for windows clang
-- name: tool_path
-  value: c:/Program Files/LLVM/bin/
-  type: winclang
+- {name: tool_path, value: "c:/Program Files/LLVM/bin/", type: winclang}
 
 # text -> c execute
 - name: txt2c
