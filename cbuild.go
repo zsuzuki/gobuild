@@ -700,8 +700,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			// register prebuild
 			sources := getList(p.Source, info.target)
 			if len(sources) == 0 {
-				e := errors.New("build command: " + p.Name + " is empty source.")
-				return e
+				return fmt.Errorf("No sources for command `%s`", p.Name)
 			}
 			for i, src := range sources {
 				if src[0] == '$' {
@@ -811,27 +810,30 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 
 	arg1 := append(info.includes, info.defines...)
 
-	for _, f := range files {
-		of := f
+	for _, srcPath := range files {
+		dstPathBase := srcPath	// `dstPathBase` contains the basename of the `srcPath`.
 		var objdir string
-		if f[0] == '$' {
-			if strings.HasPrefix(f, "$target/") {
-				of = strings.Replace(of, "$target/", "/."+info.target+"/", 1)
+		if srcPath[0] == '$' {
+			// Auto generated pathes.
+			if strings.HasPrefix(srcPath, "$target/") {
+				dstPathBase = strings.Replace(dstPathBase, "$target/", "/."+info.target+"/", 1)
 			} else {
-				of = f[1:]
+				dstPathBase = srcPath[1:]
 			}
-			f = filepath.Join(info.outputdir, of)
-			objdir = normalizePath(filepath.Join(filepath.Dir(f), buildDirectory))
+			srcPath = filepath.Join(info.outputdir, dstPathBase)
+			dstPathBase = filepath.Base (dstPathBase)
+			objdir = normalizePath(filepath.Join(filepath.Dir(srcPath), buildDirectory))
 		} else {
-			tf := filepath.Join(loaddir, f)
-			objdir = normalizePath(filepath.Join(filepath.Dir(filepath.Join(info.outputdir, f)), buildDirectory))
-			of = filepath.Base(tf)
-			f = tf
+			// At this point, `srcPath` is a relative path rooted from `loaddir`
+			tf := filepath.Join(loaddir, srcPath)
+			objdir = normalizePath(filepath.Join(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory))
+			dstPathBase = filepath.Base(tf)
+			srcPath = tf
 		}
-		f, _ = filepath.Abs(f)
-		sname := strings.Replace(normalizePath(f), ":", "$:", -1)
-		oname := normalizePath(filepath.Join(objdir, of+".o"))
-		dname := normalizePath(filepath.Join(objdir, of+".d"))
+		srcPath, _ = filepath.Abs(srcPath)
+		sname := strings.Replace(normalizePath(srcPath), ":", "$:", -1)
+		oname := normalizePath(filepath.Join(objdir, dstPathBase+".o"))
+		dname := normalizePath(filepath.Join(objdir, dstPathBase+".d"))
 		createList = append(createList, oname)
 
 		carg := []string{}
@@ -849,8 +851,8 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			}
 			carg = append(carg, ca)
 		}
-		ext := filepath.Ext(f)
-		if rule, exists := otherRuleList[ext]; exists {
+		srcExt := filepath.Ext(srcPath)
+		if rule, exists := otherRuleList[srcExt]; exists {
 			// custom
 			linc := ""
 			ldef := ""
@@ -878,7 +880,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 					return []string{}, err
 				}
 				ocmd := OtherRuleFile{
-					rule:     "compile" + ext,
+					rule:     "compile" + srcExt,
 					compiler: compiler,
 					infile:   sname,
 					outfile:  oname,
