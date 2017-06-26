@@ -550,6 +550,18 @@ func replaceVariable(info BuildInfo, str string, start int, noError bool, nest i
 }
 
 //
+func convertWindowsDrive(path string) string {
+	if filepath.IsAbs(path) && strings.Index(path, ":") == 1 {
+		drive := filepath.VolumeName(path)
+		if len(drive) > 0 {
+			drive = strings.Replace(strings.ToLower(drive), ":", "$:", 1)
+			path = drive + path[2:]
+		}
+	}
+	return path
+}
+
+//
 // pre build
 //
 func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
@@ -564,7 +576,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			for i, src := range srlist {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(info.outputdir + "output/" + src[1:len(src)])
-					sabs = strings.Replace(sabs, ":", "$:", 1)
+					sabs = convertWindowsDrive(sabs)
 					srlist[i] = filepath.ToSlash(filepath.Clean(sabs))
 				} else if src == "always" {
 					srlist[i] = src + "|"
@@ -628,7 +640,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
 				}
 				outfile, _ := filepath.Abs(info.outputdir + pn)
-				outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
+				outfile = convertWindowsDrive(filepath.ToSlash(filepath.Clean(outfile)))
 				cmd := BuildCommand{
 					cmd:          p.Command,
 					cmdtype:      mycmd,
@@ -648,7 +660,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 						dst += ext
 					}
 					outfile, _ := filepath.Abs(info.outputdir + "output/" + dst)
-					outfile = strings.Replace(filepath.ToSlash(filepath.Clean(outfile)), ":", "$:", -1)
+					outfile = convertWindowsDrive(filepath.ToSlash(filepath.Clean(outfile)))
 					cmd := BuildCommand{
 						cmd:          p.Command,
 						cmdtype:      mycmd,
@@ -690,7 +702,7 @@ func compileFiles(info BuildInfo, objdir string, loaddir string, files []string)
 		}
 		f, _ = filepath.Abs(f)
 		sname := filepath.ToSlash(filepath.Clean(f))
-		sname = strings.Replace(sname, ":", "$:", -1)
+		sname = convertWindowsDrive(sname)
 		oname := filepath.ToSlash(filepath.Clean(objdir + of + ".o"))
 		dname := filepath.ToSlash(filepath.Clean(objdir + of + ".d"))
 		createList = append(createList, oname)
@@ -1257,7 +1269,7 @@ func outputNinja() {
 			file.WriteString(" $\n  " + f)
 		}
 		for _, dep := range bs.depends {
-			depstr := strings.Replace(dep, ":", "$:", 1)
+			depstr := convertWindowsDrive(dep)
 			file.WriteString(" $\n  " + depstr)
 		}
 		if bs.needCmdAlias {
@@ -1274,7 +1286,7 @@ func outputNinja() {
 				if i&3 == 3 {
 					file.WriteString(" $\n   ")
 				}
-				ostr := strings.Replace(o, ":", "$:", 1)
+				ostr := convertWindowsDrive(o)
 				file.WriteString(" " + ostr)
 			}
 			file.WriteString("\n")
