@@ -47,13 +47,13 @@ var (
 	responseNewline   bool
 	buildNinjaName    string
 	subNinjaList      []string
-	ProgramName       string
+	ProgramName       = getExeName()
 )
 
 // The entry point.
 func main() {
 
-	ProgramName := getExeName()
+	//ProgramName := getExeName()
 
 	gen_msbuild := false
 	projdir := ""
@@ -139,8 +139,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: No commands to run.\n", ProgramName)
 		os.Exit(0)
 	}
-
-	Verbose("%s: Creates \"%s\".\n", ProgramName, buildNinjaName)
 	if err := outputNinja(); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v", ProgramName, err)
 		os.Exit(1)
@@ -171,7 +169,8 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	} else {
 		loaddir += "/"
 	}
-	Verbose("%s: Enter %s\n", pathname)
+	Verbose("%s: Enter \"%s\"\n", ProgramName, loaddir)
+	defer Verbose("%s: Leave \"%s\"\n", ProgramName, loaddir)
 	myYaml := filepath.Join(loaddir, "make.yml")
 	buf, err := ioutil.ReadFile(myYaml)
 	if err != nil {
@@ -265,7 +264,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		outputdirSet = true
 	}
 
-	info.outputdir = normalizePath(filepath.Join(outputdir, loaddir)) + "/" // Proofs '/' ending
+	info.outputdir = normalizePath(outputdir, loaddir) + "/" // Proofs '/' ending
 
 	//objdir := filepath.Clean(filepath.Join(outputdir, loaddir, buildDirectory+objsSuffix)) + "/" // Proofs '/' ending
 
@@ -416,10 +415,10 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		/* NO-OP */
 	}
 
+	Verbose("%s: Artifacts in \"%s\":\n", ProgramName, pathname)
 	if verboseMode {
-		fmt.Println(pathname+" create list:", len(result.createList))
 		for _, rc := range result.createList {
-			fmt.Println("    ", rc)
+			fmt.Fprintf(os.Stderr, "#   %s\n", rc)
 		}
 	}
 	result.success = true
@@ -545,7 +544,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 
 	if packager.Target != "" {
 		// package
-		pkgname := normalizePath(filepath.Join(outputdir, targetName, packager.Target))
+		pkgname := normalizePath(outputdir, targetName, packager.Target)
 		pkgr, e := info.ExpandVariable("packager")
 		if e != nil {
 			return e
@@ -570,7 +569,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 // convert objects
 //
 func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
-	cvname := normalizePath(filepath.Join(info.outputdir, targetName))
+	cvname := normalizePath(info.outputdir, targetName)
 	converter := info.variables["converter"]
 
 	clist := []string{}
@@ -686,7 +685,7 @@ func replacePath(value string, addDir string) (string, string) {
 	if ucmd[0] == '$' {
 		ucmd = ucmd[1:]
 	}
-	p := normalizePath(filepath.Join(addDir, ucmd))
+	p := normalizePath(addDir, ucmd)
 	result := p
 	for i, uu := range url {
 		if i > 0 {
@@ -715,7 +714,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					sources[i] = src + "|"
 				} else {
 					if expanded, err := info.Interpolate(src); err == nil {
-						sources[i] = normalizePath(filepath.Join(loaddir, expanded))
+						sources[i] = normalizePath(loaddir, expanded)
 					} else {
 						return err
 					}
@@ -725,7 +724,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			if !ok {
 				return errors.Errorf("Missing build command \"%s\" (referenced from \"%s\")", p.Command, p.Name)
 			}
-			mycmd := strings.Replace(normalizePath(filepath.Join(info.outputdir, p.Command)), "/", "_", -1)
+			mycmd := strings.Replace(normalizePath(info.outputdir, p.Command), "/", "_", -1)
 			deps := []string{}
 
 			if _, af := appendRules[mycmd]; !af {
@@ -825,18 +824,18 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			}
 			srcPath = filepath.Join(info.outputdir, dstPathBase)
 			dstPathBase = filepath.Base(dstPathBase)
-			objdir = normalizePath(filepath.Join(filepath.Dir(srcPath), buildDirectory))
+			objdir = normalizePath(filepath.Dir(srcPath), buildDirectory)
 		} else {
 			// At this point, `srcPath` is a relative path rooted from `loaddir`
 			tf := filepath.Join(loaddir, srcPath)
-			objdir = normalizePath(filepath.Join(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory))
+			objdir = normalizePath(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
 			dstPathBase = filepath.Base(tf)
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		sname := escapeDriveColon(normalizePath(srcPath))
-		oname := normalizePath(filepath.Join(objdir, dstPathBase+".o"))
-		dname := normalizePath(filepath.Join(objdir, dstPathBase+".d"))
+		sname := convertWindowsDrive(normalizePath(srcPath))
+		oname := normalizePath(objdir, dstPathBase+".o")
+		dname := normalizePath(objdir, dstPathBase+".d")
 		createList = append(createList, oname)
 
 		carg := []string{}
@@ -898,7 +897,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			} else {
 				Warning("compiler: Missing a compiler \"%s\" definitions in \"%s\".",
 					rule.Compiler,
-					normalizePath(filepath.Join(info.mydir, "make.yml")))
+					normalizePath(info.mydir, "make.yml"))
 			}
 		} else {
 			// normal
@@ -925,15 +924,13 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
 	if !Exists(pchSrc) {
-		Verbose ("%s: \"%s\" does not exists.\n", ProgramName, pchSrc)
+		Verbose("%s: \"%s\" does not exists.\n", ProgramName, pchSrc)
 		return ""
 	}
-	Verbose ("%s: \"%s\" found.\n", ProgramName, pchSrc)
+	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
 	dstdir := filepath.Join(info.outputdir, srcdir, buildDirectory)
 	pchDst := filepath.ToSlash(filepath.Join(dstdir, pchName+".pch"))
-	if verboseMode {
-		fmt.Println("Create " + pchDst)
-	}
+	Verbose("%s: Create PCH \"%s\"\n", ProgramName, pchDst)
 	args := append(info.includes, info.defines...)
 	for _, opt := range info.options {
 		switch opt {
@@ -948,7 +945,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 		}
 	}
 	// PCH source found.
-	Verbose ("%s: PCH creation command line is \"%s\".", ProgramName, strings.Join(args, " "))
+	Verbose("%s: PCH creation command line is \"%s\".\n", ProgramName, strings.Join(args, " "))
 	cmd := BuildCommand{
 		Command:          compiler,
 		CommandType:      "gen_pch",
@@ -1069,16 +1066,16 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 
 // Creates *.ninja file.
 func outputNinja() error {
-	Verbose ("%s: Creates \"%s\"", buildNinjaName)
+	Verbose("%s: Creates \"%s\"\n", ProgramName, buildNinjaName)
 
 	tPath := NewTransientOutput(buildNinjaName)
 	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
-		return errors.Wrapf (err, "Failed to create temporal output \"%s\"", tPath.TempOutput)
+		return errors.Wrapf(err, "Failed to create temporal output \"%s\"", tPath.TempOutput)
 	}
 	defer file.Close()
 	defer tPath.Abort()
-	Verbose ("%s: Creating transient output \"%s\"", ProgramName, tPath.TempOutput)
+	Verbose("%s: Creating transient output \"%s\"\n", ProgramName, tPath.TempOutput)
 
 	// execute build
 	if err = outputRules(file); err != nil {
@@ -1137,12 +1134,12 @@ func outputNinja() error {
 		file.WriteString("subninja " + sn + "\n")
 	}
 	if err := file.Close(); err != nil {
-		return errors.Wrapf(err,"Closing \"%s\" failed.", file.Name())
+		return errors.Wrapf(err, "Closing \"%s\" failed.", file.Name())
 	}
 	if err := tPath.Commit(); err != nil {
-		return errors.Wrapf(err,"Renaming \"%s\" to \"%s\" failed.", tPath.TempOutput, tPath.Output)
+		return errors.Wrapf(err, "Renaming \"%s\" to \"%s\" failed.", tPath.TempOutput, tPath.Output)
 	}
-	Verbose ("%s: Renaming %s to %s\n", ProgramName, tPath.TempOutput, tPath.Output)
+	Verbose("%s: Renaming %s to %s\n", ProgramName, tPath.TempOutput, tPath.Output)
 	return nil
 }
 
@@ -1289,8 +1286,8 @@ func outputMSBuild(outdir, projname string) error {
 }
 
 // Normalizes file path.
-func normalizePath(path string) string {
-	return filepath.ToSlash(filepath.Clean(path))
+func normalizePath(pathes ...string) string {
+	return filepath.ToSlash(filepath.Clean(filepath.Join(pathes...)))
 }
 
 // Escapes ':' in path.
@@ -1308,6 +1305,7 @@ func escapeDriveColon(path string) string {
 // Convert back to escaped path
 func unescapeDriveColon(path string) string {
 	return strings.Replace(path, "$:", ":", 1)
+}
 
 // Verbose output if wanted
 func Verbose(format string, args ...interface{}) {
