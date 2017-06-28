@@ -13,9 +13,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kuma777/go-msbuild"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
+
+	"github.com/kuma777/go-msbuild"
 )
 
 //
@@ -131,6 +132,7 @@ func main() {
 		linkOptions:    []string{},
 		selectTarget:   targetName,
 		target:         targetName}
+
 	if r, err := build(buildinfo, ""); !r.success {
 		fmt.Fprintf(os.Stderr, "%s:error: %v\n", ProgramName, err)
 		os.Exit(1)
@@ -139,13 +141,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: No commands to run.\n", ProgramName)
 		os.Exit(0)
 	}
-	if err := outputNinja(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v", ProgramName, err)
-		os.Exit(1)
-	}
 	if gen_msbuild {
 		Verbose("%s: Creates VC++ project file(s).\n", ProgramName)
 		outputMSBuild(projdir, projname)
+	} else {
+		if err := outputNinja(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v", ProgramName, err)
+			os.Exit(1)
+		}
 	}
 	os.Exit(0)
 }
@@ -264,7 +267,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		outputdirSet = true
 	}
 
-	info.outputdir = normalizePath(outputdir, loaddir) + "/" // Proofs '/' ending
+	info.outputdir = JoinPathes(outputdir, loaddir) + "/" // Proofs '/' ending
 
 	//objdir := filepath.Clean(filepath.Join(outputdir, loaddir, buildDirectory+objsSuffix)) + "/" // Proofs '/' ending
 
@@ -415,7 +418,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 		/* NO-OP */
 	}
 
-	Verbose("%s: Artifacts in \"%s\":\n", ProgramName, pathname)
+	Verbose("%s: Artifacts in \"%s\":\n", ProgramName, loaddir)
 	if verboseMode {
 		for _, rc := range result.createList {
 			fmt.Fprintf(os.Stderr, "#   %s\n", rc)
@@ -488,7 +491,7 @@ func createArchive(info BuildInfo, createList []string, targetName string) (stri
 	default:
 		arname = filepath.Join(info.outputdir, fmt.Sprintf("lib%s.a", targetName))
 	}
-	arname = normalizePath(arname)
+	arname = JoinPathes(arname)
 
 	archiver, e := info.ExpandVariable("archiver")
 	if e != nil {
@@ -516,7 +519,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 	if ok {
 		trname += esuf
 	}
-	trname = normalizePath(trname)
+	trname = JoinPathes(trname)
 
 	linker, e := info.ExpandVariable("linker")
 	if e != nil {
@@ -544,7 +547,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 
 	if packager.Target != "" {
 		// package
-		pkgname := normalizePath(outputdir, targetName, packager.Target)
+		pkgname := JoinPathes(outputdir, targetName, packager.Target)
 		pkgr, e := info.ExpandVariable("packager")
 		if e != nil {
 			return e
@@ -569,12 +572,12 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 // convert objects
 //
 func createConvert(info BuildInfo, loaddir string, createList []string, targetName string) {
-	cvname := normalizePath(info.outputdir, targetName)
+	cvname := JoinPathes(info.outputdir, targetName)
 	converter := info.variables["converter"]
 
 	clist := []string{}
 	for _, f := range createList {
-		clist = append(clist, normalizePath(loaddir+f))
+		clist = append(clist, JoinPathes(loaddir+f))
 	}
 
 	cmd := BuildCommand{
@@ -616,7 +619,7 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 		if esuf, ok := info.variables["execute_suffix"]; ok {
 			trname += esuf
 		}
-		createLink(info, createList, normalizePath(trname), Packager{})
+		createLink(info, createList, JoinPathes(trname), Packager{})
 	}
 	return nil
 }
@@ -685,7 +688,7 @@ func replacePath(value string, addDir string) (string, string) {
 	if ucmd[0] == '$' {
 		ucmd = ucmd[1:]
 	}
-	p := normalizePath(addDir, ucmd)
+	p := JoinPathes(addDir, ucmd)
 	result := p
 	for i, uu := range url {
 		if i > 0 {
@@ -709,12 +712,12 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			for i, src := range sources {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					sources[i] = escapeDriveColon(normalizePath(sabs))
+					sources[i] = escapeDriveColon(JoinPathes(sabs))
 				} else if src == "always" {
 					sources[i] = src + "|"
 				} else {
 					if expanded, err := info.Interpolate(src); err == nil {
-						sources[i] = normalizePath(loaddir, expanded)
+						sources[i] = JoinPathes(loaddir, expanded)
 					} else {
 						return err
 					}
@@ -724,7 +727,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			if !ok {
 				return errors.Errorf("Missing build command \"%s\" (referenced from \"%s\")", p.Command, p.Name)
 			}
-			mycmd := strings.Replace(normalizePath(info.outputdir, p.Command), "/", "_", -1)
+			mycmd := strings.Replace(JoinPathes(info.outputdir, p.Command), "/", "_", -1)
 			deps := []string{}
 
 			if _, af := appendRules[mycmd]; !af {
@@ -763,7 +766,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
 				}
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-				outfile = escapeDriveColon(normalizePath(outfile))
+				outfile = escapeDriveColon(JoinPathes(outfile))
 				cmd := BuildCommand{
 					Command:          p.Command,
 					CommandType:      mycmd,
@@ -784,7 +787,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 						dst += ext
 					}
 					outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
-					outfile = escapeDriveColon(normalizePath(outfile))
+					outfile = escapeDriveColon(JoinPathes(outfile))
 					cmd := BuildCommand{
 						Command:          p.Command,
 						CommandType:      mycmd,
@@ -824,18 +827,18 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			}
 			srcPath = filepath.Join(info.outputdir, dstPathBase)
 			dstPathBase = filepath.Base(dstPathBase)
-			objdir = normalizePath(filepath.Dir(srcPath), buildDirectory)
+			objdir = JoinPathes(filepath.Dir(srcPath), buildDirectory)
 		} else {
 			// At this point, `srcPath` is a relative path rooted from `loaddir`
 			tf := filepath.Join(loaddir, srcPath)
-			objdir = normalizePath(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
+			objdir = JoinPathes(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
 			dstPathBase = filepath.Base(tf)
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		sname := convertWindowsDrive(normalizePath(srcPath))
-		oname := normalizePath(objdir, dstPathBase+".o")
-		dname := normalizePath(objdir, dstPathBase+".d")
+		sname := escapeDriveColon(JoinPathes(srcPath))
+		oname := JoinPathes(objdir, dstPathBase+".o")
+		dname := JoinPathes(objdir, dstPathBase+".d")
 		createList = append(createList, oname)
 
 		carg := []string{}
@@ -897,7 +900,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			} else {
 				Warning("compiler: Missing a compiler \"%s\" definitions in \"%s\".",
 					rule.Compiler,
-					normalizePath(info.mydir, "make.yml"))
+					JoinPathes(info.mydir, "make.yml"))
 			}
 		} else {
 			// normal
@@ -1081,58 +1084,61 @@ func outputNinja() error {
 	if err = outputRules(file); err != nil {
 		return errors.Wrapf(err, "Failed to emit rules.")
 	}
-
-	for _, bs := range commandList {
-		file.WriteString("build " + bs.OutFile + ": " + bs.CommandType)
-		for _, f := range bs.InFiles {
-			file.WriteString(" $\n  " + f)
-		}
-		for _, dep := range bs.Depends {
-			depstr := escapeDriveColon(dep)
-			file.WriteString(" $\n  " + depstr)
-		}
-		if 0 < len(bs.ImplicitDepends) {
-			file.WriteString(" $\n  | " + escapeDriveColon(bs.ImplicitDepends[0]))
-			for _, dep := range bs.ImplicitDepends[1:] {
-				file.WriteString(" $\n    " + escapeDriveColon(dep))
-			}
-		}
-		if bs.NeedCommandAlias {
-			file.WriteString("\n  " + bs.CommandType + " = " + bs.Command + "\n")
-		} else {
-			file.WriteString("\n")
-		}
-		if bs.DepFile != "" {
-			file.WriteString("  depf = " + bs.DepFile + "\n")
-		}
-		if len(bs.Args) > 0 {
-			tmpLines := make([]string, 0, len(bs.Args))
-			for _, t := range bs.Args {
-				tmpLines = append(tmpLines, escapeDriveColon(t))
-			}
-			file.WriteString(fold(tmpLines, 120, "  options ="))
-			file.WriteString("\n")
-		}
-		file.WriteString("  desc = " + bs.OutFile + "\n\n")
+	type WriteContext struct {
+		Commands   []BuildCommand
+		OtherRules []OtherRuleFile
+		SubNinjas  []string
 	}
-	for _, oc := range otherRuleFileList {
-		file.WriteString("build " + oc.outfile + ": " + oc.rule + " " + oc.infile + "\n")
-		file.WriteString("  compiler = " + oc.compiler + "\n")
-		if oc.include != "" {
-			file.WriteString("  include = " + oc.include + "\n")
-		}
-		if oc.option != "" {
-			file.WriteString("  option = " + oc.option + "\n")
-		}
-		if oc.depend != "" {
-			file.WriteString("  depf = " + oc.depend + "\n")
-		}
-		file.WriteString("  desc = " + oc.outfile + "\n\n")
-	}
-
-	for _, sn := range subNinjaList {
-		file.WriteString("subninja " + sn + "\n")
-	}
+	ctx := WriteContext{
+		Commands:   commandList,
+		OtherRules: otherRuleFileList,
+		SubNinjas:  subNinjaList}
+	funcs := template.FuncMap{"escape_drive": escapeDriveColon}
+	commandTemplate := template.Must(template.New("rules").Funcs(funcs).Parse(`# Commands
+{{- define "INFILES"}}
+    {{- range $in := .}} {{$in}}{{end}}
+{{- end}}
+{{- define "DEPS"}}
+    {{- if .}}{{range $dep := .}} {{$dep}}{{end}}{{end}}
+{{- end}}
+{{- define "IMPDEPS"}}
+    {{- if .}} |{{range $impdep := .}} {{$impdep}}{{end}}{{- end}}
+{{- end}}
+{{range $c := .Commands}}
+build {{$c.OutFile}} : {{$c.CommandType}}{{template "INFILES" $c.InFiles}}{{template "DEPS" $c.Depends}}{{template "IMPDEPS" $c.ImplicitDepends}}
+    desc = {{$c.OutFile}}
+{{- if $c.NeedCommandAlias}}
+    {{$c.CommandType}} = {{$c.Command}}
+{{- end}}
+{{- if $c.DepFile}}
+    depf = {{$c.DepFile}}
+{{- end}}
+{{- if $c.Args}}
+    options ={{range $a := $c.Args}} {{$a}}{{end}}
+{{- end}}
+{{end}}
+# Other rules
+{{range $item := .OtherRules}}
+build {{$item.Outfile}} : {{$item.Rule}} {{$item.Infile}}
+    desc     = {{$item.Outfile}}
+    compiler = {{$item.Compiler}}
+{{- if $item.Include}}
+    include  = {{$item.Include}}
+{{- end}}
+{{- if $item.Option}}
+    option   = {{$item.Option}}
+{{- end}}
+{{- if $item.Depend}}
+    depf     = {{$item.Depend}}
+{{- end}}
+{{- end}}
+{{- if .SubNinjas}}
+{{range $subninja := .SubNinjas}}
+subninja {{$subninja}}
+{{end}}
+{{end}}
+`))
+	commandTemplate.Execute(file, ctx)
 	if err := file.Close(); err != nil {
 		return errors.Wrapf(err, "Closing \"%s\" failed.", file.Name())
 	}
@@ -1285,8 +1291,8 @@ func outputMSBuild(outdir, projname string) error {
 	return nil
 }
 
-// Normalizes file path.
-func normalizePath(pathes ...string) string {
+// Joins suppiled path components and normalize the result.
+func JoinPathes(pathes ...string) string {
 	return filepath.ToSlash(filepath.Clean(filepath.Join(pathes...)))
 }
 
@@ -1314,7 +1320,9 @@ func Verbose(format string, args ...interface{}) {
 	}
 }
 
+// Emit a warning to `os.Stderr`
 func Warning(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "%s:warning:", ProgramName)
 	fmt.Fprintf(os.Stderr, format, args...)
+	fmt.Fprintln(os.Stderr)
 }
