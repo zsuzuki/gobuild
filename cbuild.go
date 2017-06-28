@@ -4,7 +4,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -15,6 +14,7 @@ import (
 	"text/template"
 
 	"github.com/kuma777/go-msbuild"
+	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
 
@@ -47,15 +47,23 @@ var (
 	responseNewline   bool
 	buildNinjaName    string
 	subNinjaList      []string
-	dispExeName       string
+	ProgramName       string
 )
 
 // The entry point.
 func main() {
+
+	ProgramName := getExeName()
+
 	gen_msbuild := false
 	projdir := ""
 	projname := ""
 
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [options] [<target>]\n", ProgramName)
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
 	flag.BoolVar(&verboseMode, "v", false, "verbose mode")
 	flag.BoolVar(&isRelease, "release", false, "release build")
 	flag.BoolVar(&isDebug, "debug", true, "debug build")
@@ -69,14 +77,11 @@ func main() {
 	flag.BoolVar(&gen_msbuild, "msbuild", false, "Export MSBuild project")
 	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
 	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
-	dispVersion := flag.Bool("version", false, "display version")
+	showVersionAndExit := flag.Bool("version", false, "display version")
 	flag.Parse()
 
-	exeName := getExeName()
-
-	versionString := cbuildVersion + "(" + runtime.Version() + "/" + runtime.Compiler + ")"
-	if *dispVersion {
-		fmt.Println(versionString)
+	if *showVersionAndExit {
+		fmt.Fprintf(os.Stdout, "%s: %v (%s/%s)\n", ProgramName, cbuildVersion, runtime.Version(), runtime.Compiler)
 		os.Exit(0)
 	}
 
@@ -103,7 +108,7 @@ func main() {
 	responseNewline = false
 
 	ra := flag.Args()
-	if len(ra) > 0 && targetName == "" {
+	if 0 < flag.NArg() && targetName == "" {
 		targetName = ra[0]
 	}
 
@@ -113,9 +118,8 @@ func main() {
 	otherRuleFileList = []OtherRuleFile{}
 	subNinjaList = []string{}
 
-	dispExeName = filepath.ToSlash(exeName)
 	if targetName != "" {
-		fmt.Printf("%s: make target: %s\n", dispExeName, targetName)
+		Verbose("%s: Target is \"%s\"\n", ProgramName, targetName)
 	}
 	buildinfo := BuildInfo{
 		variables:      map[string]string{"option_prefix": "-"},
@@ -127,21 +131,23 @@ func main() {
 		linkOptions:    []string{},
 		selectTarget:   targetName,
 		target:         targetName}
-	if r, err := build(buildinfo, ""); r.success == false {
-		fmt.Printf("%s: error: %s", dispExeName, err.Error())
+	if r, err := build(buildinfo, ""); !r.success {
+		fmt.Fprintf(os.Stderr, "%s:error: %v\n", ProgramName, err)
 		os.Exit(1)
 	}
 	if nlen := len(commandList) + len(otherRuleFileList); nlen <= 0 {
-		fmt.Printf("%s: No commands found.\n", dispExeName)
+		fmt.Fprintf(os.Stderr, "%s: No commands to run.\n", ProgramName)
 		os.Exit(0)
 	}
 
+	Verbose("%s: Creates \"%s\".\n", ProgramName, buildNinjaName)
+	if err := outputNinja(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v", ProgramName, err)
+		os.Exit(1)
+	}
 	if gen_msbuild {
+		Verbose("%s: Creates VC++ project file(s).\n", ProgramName)
 		outputMSBuild(projdir, projname)
-		fmt.Printf("%s: msbuild done.\n", dispExeName)
-	} else {
-		outputNinja()
-		fmt.Printf("%s: done.\n", dispExeName)
 	}
 	os.Exit(0)
 }
@@ -152,7 +158,7 @@ func getExeName() string {
 	if n, err := os.Executable(); err == nil {
 		name = n
 	}
-	return name
+	return filepath.ToSlash(name)
 }
 
 //
@@ -165,23 +171,19 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	} else {
 		loaddir += "/"
 	}
-	if verboseMode == true {
-		fmt.Println(pathname + ": start")
-	}
+	Verbose("%s: Enter %s\n", pathname)
 	myYaml := filepath.Join(loaddir, "make.yml")
 	buf, err := ioutil.ReadFile(myYaml)
 	if err != nil {
-		e := errors.New(myYaml + ": " + err.Error())
 		result.success = false
-		return result, e
+		return result, errors.Wrapf(err, "Failed to read \"%s\"", myYaml)
 	}
 
 	var d Data
 	err = yaml.Unmarshal(buf, &d)
 	if err != nil {
-		e := errors.New(myYaml + ": " + err.Error())
 		result.success = false
-		return result, e
+		return result, errors.Wrapf(err, "Failed to unmarshal \"%s\"", myYaml)
 	}
 
 	info.mydir = loaddir
@@ -195,7 +197,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	}
 	if info.target == "" {
 		info.target = NowTarget.Name
-		fmt.Printf("%s: make target: %s\n", dispExeName, info.target)
+		Verbose("%s: Target is \"%s\".\n", ProgramName, info.target)
 	}
 	info.selectTarget = ""
 
@@ -221,7 +223,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				case "false":
 					useResponse = false
 				default:
-					fmt.Printf("warning: Unrecognized value [%s] for `enable_response`\n", v.Value)
+					Warning("Unrecognized value [%s] for `enable_response`\n", v.Value)
 				}
 			case "response_newline":
 				switch val {
@@ -230,7 +232,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				case "false":
 					responseNewline = false
 				default:
-					fmt.Printf("warning: Unrecognized value [%s] for `response_newline`\n", v.Value)
+					Warning("Unrecognized value [%s] for `response_newline`\n", v.Value)
 				}
 			case "group_archives":
 				switch val {
@@ -239,7 +241,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				case "false":
 					groupArchives = false
 				default:
-					fmt.Printf("warning: Unrecognized value [%s] for `group_archives`\n", v.Value)
+					Warning("Unrecognized value [%s] for `group_archives`\n", v.Value)
 				}
 			default: /* NO-OP */
 			}
@@ -278,7 +280,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				result.success = false
 				return result, err
 			}
-			if useRel == false && filepath.IsAbs(pth) == false {
+			if !useRel && !filepath.IsAbs(pth) {
 				pth = filepath.Clean(filepath.Join(loaddir, pth))
 			}
 		}
@@ -384,7 +386,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				return result, e
 			}
 		} else {
-			fmt.Println("There are no files to build.", loaddir)
+			Warning("There are no files to build in \"%s\".", loaddir)
 		}
 	case "execute":
 		// link program
@@ -394,13 +396,13 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 				return result, e
 			}
 		} else {
-			fmt.Println("There are no files to build.", loaddir)
+			Warning("There are no files to build in \"%s\".", loaddir)
 		}
 	case "convert":
 		if 0 < len(cvfiles) {
 			createConvert(info, loaddir, cvfiles, NowTarget.Name)
 		} else {
-			fmt.Println("There are no files to convert.", loaddir)
+			Warning("There are no files to convert in \"%s\".", loaddir)
 		}
 	case "passthrough":
 		result.createList = append(subdirCreateList, createList...)
@@ -721,8 +723,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			}
 			ur, ok := info.variables[p.Command]
 			if !ok {
-				e := errors.New("build command: <" + p.Command + "> is not found.(use by " + p.Name + ")")
-				return e
+				return errors.Errorf("Missing build command \"%s\" (referenced from \"%s\")", p.Command, p.Name)
 			}
 			mycmd := strings.Replace(normalizePath(filepath.Join(info.outputdir, p.Command)), "/", "_", -1)
 			deps := []string{}
@@ -895,7 +896,9 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 				}
 				otherRuleFileList = append(otherRuleFileList, ocmd)
 			} else {
-				fmt.Println("compiler:", rule.Compiler, "is not found. in ["+info.mydir+"make.yml].")
+				Warning("compiler: Missing a compiler \"%s\" definitions in \"%s\".",
+					rule.Compiler,
+					normalizePath(filepath.Join(info.mydir, "make.yml")))
 			}
 		} else {
 			// normal
@@ -922,14 +925,10 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
 	if !Exists(pchSrc) {
-		if verboseMode {
-			fmt.Println(pchSrc + " does not exists.")
-		}
+		Verbose ("%s: \"%s\" does not exists.\n", ProgramName, pchSrc)
 		return ""
 	}
-	if verboseMode {
-		fmt.Println(pchSrc + " found.")
-	}
+	Verbose ("%s: \"%s\" found.\n", ProgramName, pchSrc)
 	dstdir := filepath.Join(info.outputdir, srcdir, buildDirectory)
 	pchDst := filepath.ToSlash(filepath.Join(dstdir, pchName+".pch"))
 	if verboseMode {
@@ -949,9 +948,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 		}
 	}
 	// PCH source found.
-	if verboseMode {
-		fmt.Printf("PCH: %s\n", strings.Join(args, " "))
-	}
+	Verbose ("%s: PCH creation command line is \"%s\".", ProgramName, strings.Join(args, " "))
 	cmd := BuildCommand{
 		Command:          compiler,
 		CommandType:      "gen_pch",
@@ -1071,23 +1068,22 @@ func getVariable(info BuildInfo, v Variable) (string, bool) {
 }
 
 // Creates *.ninja file.
-func outputNinja() {
-	exeName := getExeName()
-	if verboseMode {
-		fmt.Println("output " + buildNinjaName)
-	}
+func outputNinja() error {
+	Verbose ("%s: Creates \"%s\"", buildNinjaName)
+
 	tPath := NewTransientOutput(buildNinjaName)
 	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
-		fmt.Println("gobuild: error:", err.Error())
-		os.Exit(1)
+		return errors.Wrapf (err, "Failed to create temporal output \"%s\"", tPath.TempOutput)
 	}
+	defer file.Close()
 	defer tPath.Abort()
-	if verboseMode {
-		fmt.Printf("%s: Creating transient output: %s\n", exeName, tPath.TempOutput)
-	}
+	Verbose ("%s: Creating transient output \"%s\"", ProgramName, tPath.TempOutput)
+
 	// execute build
-	outputRules(file)
+	if err = outputRules(file); err != nil {
+		return errors.Wrapf(err, "Failed to emit rules.")
+	}
 
 	for _, bs := range commandList {
 		file.WriteString("build " + bs.OutFile + ": " + bs.CommandType)
@@ -1141,17 +1137,13 @@ func outputNinja() {
 		file.WriteString("subninja " + sn + "\n")
 	}
 	if err := file.Close(); err != nil {
-		tPath.Abort()
-		fmt.Printf("%s: Close failed.\n", exeName)
-		os.Exit(1)
+		return errors.Wrapf(err,"Closing \"%s\" failed.", file.Name())
 	}
 	if err := tPath.Commit(); err != nil {
-		fmt.Printf("%s: Renaming %s to %s failed.\n", exeName, tPath.TempOutput, tPath.Output)
-		os.Exit(1)
+		return errors.Wrapf(err,"Renaming \"%s\" to \"%s\" failed.", tPath.TempOutput, tPath.Output)
 	}
-	if verboseMode {
-		fmt.Printf("%s: Renaming %s to %s\n", exeName, tPath.TempOutput, tPath.Output)
-	}
+	Verbose ("%s: Renaming %s to %s\n", ProgramName, tPath.TempOutput, tPath.Output)
+	return nil
 }
 
 // Construct a properly folded string from `args`.
@@ -1175,7 +1167,7 @@ func fold(args []string, maxColumns int, prefix string) string {
 }
 
 // Emits common rules.
-func outputRules(file *os.File) {
+func outputRules(file *os.File) error {
 	type RuleContext struct {
 		Platform           string
 		UseResponse        bool
@@ -1275,10 +1267,7 @@ build always: phony
 		AppendRules:        appendRules,
 		UsePCH:             true}
 
-	err := tmpl.Execute(file, ctx)
-	if err != nil {
-		panic(err)
-	}
+	return tmpl.Execute(file, ctx)
 }
 
 // Creates *.vcxproj (for VisualStudio).
@@ -1319,4 +1308,15 @@ func escapeDriveColon(path string) string {
 // Convert back to escaped path
 func unescapeDriveColon(path string) string {
 	return strings.Replace(path, "$:", ":", 1)
+
+// Verbose output if wanted
+func Verbose(format string, args ...interface{}) {
+	if verboseMode {
+		fmt.Fprintf(os.Stderr, format, args...)
+	}
+}
+
+func Warning(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "%s:warning:", ProgramName)
+	fmt.Fprintf(os.Stderr, format, args...)
 }
