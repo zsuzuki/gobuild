@@ -30,10 +30,10 @@ type Packager struct {
 
 // Target make.yml target file information
 type Target struct {
-	Name      string
-	Type      string
-	By_Target string
-	Packager  Packager
+	Name     string
+	Type     string
+	ByTarget string `yaml:"by_target"`
+	Packager Packager
 }
 
 // StringList make.yml string list('- list: ...')
@@ -72,31 +72,31 @@ type Other struct {
 	Ext         string
 	Command     string
 	Description string
-	Need_Depend bool
+	NeedDepend  bool `yaml:"need_depend"`
 	Type        string
 	Option      []StringList `yaml:",flow"`
 }
 
 // Data format make.yml top structure
 type Data struct {
-	Target         []Target     `yaml:",flow"`
-	Include        []StringList `yaml:",flow"`
-	Variable       []Variable   `yaml:",flow"`
-	Define         []StringList `yaml:",flow"`
-	Option         []StringList `yaml:",flow"`
-	Archive_Option []StringList `yaml:",flow"`
-	Convert_Option []StringList `yaml:",flow"`
-	Link_Option    []StringList `yaml:",flow"`
-	Link_Depend    []StringList `yaml:",flow"`
-	Libraries      []StringList `yaml:",flow"`
-	Prebuild       []Build      `yaml:",flow"`
-	Postbuild      []Build      `yaml:",flow"`
-	Source         []StringList `yaml:",flow"`
-	Convert_List   []StringList `yaml:",flow"`
-	Subdir         []StringList `yaml:",flow"`
-	Tests          []StringList `yaml:",flow"`
-	Other          []Other      `yaml:",flow"`
-	SubNinja       []StringList `yaml:",flow"`
+	Target        []Target     `yaml:",flow"`
+	Include       []StringList `yaml:",flow"`
+	Variable      []Variable   `yaml:",flow"`
+	Define        []StringList `yaml:",flow"`
+	Option        []StringList `yaml:",flow"`
+	ArchiveOption []StringList `yaml:"archive_option,flow"`
+	ConvertOption []StringList `yaml:"convert_option,flow"`
+	LinkOption    []StringList `yaml:"link_option,flow"`
+	LinkDepend    []StringList `yaml:"link_depend,flow"`
+	Libraries     []StringList `yaml:",flow"`
+	Prebuild      []Build      `yaml:",flow"`
+	Postbuild     []Build      `yaml:",flow"`
+	Source        []StringList `yaml:",flow"`
+	ConvertList   []StringList `yaml:"convert_list,flow"`
+	Subdir        []StringList `yaml:",flow"`
+	Tests         []StringList `yaml:",flow"`
+	Other         []Other      `yaml:",flow"`
+	SubNinja      []StringList `yaml:",flow"`
 }
 
 //
@@ -472,7 +472,7 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 
 			// search by_target
 			for _, t := range tlist {
-				if info.target == t.By_Target {
+				if info.target == t.ByTarget {
 					return t, "_" + info.target, true
 				}
 			}
@@ -841,7 +841,7 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
-				needDepend:  ot.Need_Depend}
+				needDepend:  ot.NeedDepend}
 		} else {
 			rule.option = append(rule.option, olist...)
 		}
@@ -1024,21 +1024,21 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			return result, err
 		}
 	}
-	for _, a := range getList(d.Archive_Option, info.target) {
+	for _, a := range getList(d.ArchiveOption, info.target) {
 		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
-	for _, c := range getList(d.Convert_Option, info.target) {
+	for _, c := range getList(d.ConvertOption, info.target) {
 		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
-	for _, l := range getList(d.Link_Option, info.target) {
+	for _, l := range getList(d.LinkOption, info.target) {
 		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
 		if err != nil {
 			result.success = false
@@ -1052,7 +1052,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			return result, err
 		}
 	}
-	for _, ld := range getList(d.Link_Depend, info.target) {
+	for _, ld := range getList(d.LinkDepend, info.target) {
 		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
 		if err != nil {
 			result.success = false
@@ -1069,7 +1069,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	}
 
 	files := getList(d.Source, info.target)
-	cvfiles := getList(d.Convert_List, info.target)
+	cvfiles := getList(d.ConvertList, info.target)
 	testfiles := getList(d.Tests, info.target)
 
 	// sub-directories
