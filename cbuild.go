@@ -47,6 +47,7 @@ var (
 	responseNewline   bool
 	buildNinjaName    string
 	subNinjaList      []string
+	dispExeName       string
 )
 
 // The entry point.
@@ -112,8 +113,9 @@ func main() {
 	otherRuleFileList = []OtherRuleFile{}
 	subNinjaList = []string{}
 
+	dispExeName = filepath.ToSlash(exeName)
 	if targetName != "" {
-		fmt.Println("gobuild: make target: " + targetName)
+		fmt.Printf("%s: make target: %s\n", dispExeName, targetName)
 	}
 	buildinfo := BuildInfo{
 		variables:      map[string]string{"option_prefix": "-"},
@@ -126,20 +128,21 @@ func main() {
 		selectTarget:   targetName,
 		target:         targetName}
 	if r, err := build(buildinfo, ""); r.success == false {
-		fmt.Printf("%s: error: %s", exeName, err.Error())
+		fmt.Printf("%s: error: %s", dispExeName, err.Error())
 		os.Exit(1)
 	}
 	if nlen := len(commandList) + len(otherRuleFileList); nlen <= 0 {
-		fmt.Printf("%s: No commands found.\n", exeName)
+		fmt.Printf("%s: No commands found.\n", dispExeName)
 		os.Exit(0)
 	}
 
-	outputNinja()
-
 	if gen_msbuild {
 		outputMSBuild(projdir, projname)
+		fmt.Printf("%s: msbuild done.\n", dispExeName)
+	} else {
+		outputNinja()
+		fmt.Printf("%s: done.\n", dispExeName)
 	}
-	fmt.Printf("%s: done.\n", exeName)
 	os.Exit(0)
 }
 
@@ -192,7 +195,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 	}
 	if info.target == "" {
 		info.target = NowTarget.Name
-		fmt.Println("gobuild: make target: " + info.target)
+		fmt.Printf("%s: make target: %s\n", dispExeName, info.target)
 	}
 	info.selectTarget = ""
 
