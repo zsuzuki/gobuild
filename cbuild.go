@@ -1420,13 +1420,15 @@ func main() {
 	nlen := len(commandList) + len(otherRuleFileList)
 	if nlen > 0 {
 
-		outputNinja()
-
 		if msbuild {
 			outputMSBuild(projdir, projname)
-		}
 
-		fmt.Println("gobuild: done.")
+			fmt.Println("gobuild[msbuild]: done.")
+		} else {
+			outputNinja()
+
+			fmt.Println("gobuild: done.")
+		}
 	} else {
 		fmt.Println("gobuild: empty")
 	}
