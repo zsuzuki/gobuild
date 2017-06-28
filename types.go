@@ -8,10 +8,10 @@ type Packager struct {
 
 // Target make.yml target file information
 type Target struct {
-	Name      string
-	Type      string
-	By_Target string
-	Packager  Packager
+	Name     string
+	Type     string
+	ByTarget string `yaml:"by_target"`
+	Packager Packager
 }
 
 // StringList make.yml string list('- list: ...')
@@ -50,31 +50,31 @@ type Other struct {
 	Ext         string
 	Command     string
 	Description string
-	Need_Depend bool
+	NeedDepend  bool `yaml:"need_depend"`
 	Type        string
 	Option      []StringList `yaml:",flow"`
 }
 
 // Data format make.yml top structure
 type Data struct {
-	Target         []Target     `yaml:",flow"`
-	Include        []StringList `yaml:",flow"`
-	Variable       []Variable   `yaml:",flow"`
-	Define         []StringList `yaml:",flow"`
-	Option         []StringList `yaml:",flow"`
-	Archive_Option []StringList `yaml:",flow"`
-	Convert_Option []StringList `yaml:",flow"`
-	Link_Option    []StringList `yaml:",flow"`
-	Link_Depend    []StringList `yaml:",flow"`
-	Libraries      []StringList `yaml:",flow"`
-	Prebuild       []Build      `yaml:",flow"`
-	Postbuild      []Build      `yaml:",flow"`
-	Source         []StringList `yaml:",flow"`
-	Convert_List   []StringList `yaml:",flow"`
-	Subdir         []StringList `yaml:",flow"`
-	Tests          []StringList `yaml:",flow"`
-	Other          []Other      `yaml:",flow"`
-	SubNinja       []StringList `yaml:",flow"`
+	Target        []Target     `yaml:",flow"`
+	Include       []StringList `yaml:",flow"`
+	Variable      []Variable   `yaml:",flow"`
+	Define        []StringList `yaml:",flow"`
+	Option        []StringList `yaml:",flow"`
+	ArchiveOption []StringList `yaml:"archive_option,flow"`
+	ConvertOption []StringList `yaml:"convert_option,flow"`
+	LinkOption    []StringList `yaml:"link_option,flow"`
+	LinkDepend    []StringList `yaml:"link_depend,flow"`
+	Libraries     []StringList `yaml:",flow"`
+	Prebuild      []Build      `yaml:",flow"`
+	Postbuild     []Build      `yaml:",flow"`
+	Source        []StringList `yaml:",flow"`
+	Convert_List  []StringList `yaml:",flow"`
+	Subdir        []StringList `yaml:",flow"`
+	Tests         []StringList `yaml:",flow"`
+	Other         []Other      `yaml:",flow"`
+	SubNinja      []StringList `yaml:",flow"`
 }
 
 //

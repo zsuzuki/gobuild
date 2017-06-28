@@ -292,21 +292,21 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			return result, err
 		}
 	}
-	for _, a := range getList(d.Archive_Option, info.target) {
+	for _, a := range getList(d.ArchiveOption, info.target) {
 		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
-	for _, c := range getList(d.Convert_Option, info.target) {
+	for _, c := range getList(d.ConvertOption, info.target) {
 		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
 		if err != nil {
 			result.success = false
 			return result, err
 		}
 	}
-	for _, l := range getList(d.Link_Option, info.target) {
+	for _, l := range getList(d.LinkOption, info.target) {
 		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
 		if err != nil {
 			result.success = false
@@ -320,7 +320,7 @@ func build(info BuildInfo, pathname string) (result BuildResult, err error) {
 			return result, err
 		}
 	}
-	for _, ld := range getList(d.Link_Depend, info.target) {
+	for _, ld := range getList(d.LinkDepend, info.target) {
 		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
 		if err != nil {
 			result.success = false
@@ -652,7 +652,7 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 
 			// search by_target
 			for _, t := range tlist {
-				if info.target == t.By_Target {
+				if info.target == t.ByTarget {
 					return t, "_" + info.target, true
 				}
 			}
@@ -705,8 +705,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			for i, src := range sources {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					sabs = strings.Replace(sabs, ":", "$:", 1)
-					sources[i] = normalizePath(sabs)
+					sources[i] = convertWindowsDrive(normalizePath(sabs))
 				} else if src == "always" {
 					sources[i] = src + "|"
 				} else {
@@ -761,7 +760,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
 				}
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-				outfile = strings.Replace(normalizePath(outfile), ":", "$:", -1)
+				outfile = convertWindowsDrive(normalizePath(outfile))
 				cmd := BuildCommand{
 					Command:          p.Command,
 					CommandType:      mycmd,
@@ -782,7 +781,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 						dst += ext
 					}
 					outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
-					outfile = strings.Replace(normalizePath(outfile), ":", "$:", -1)
+					outfile = convertWindowsDrive(normalizePath(outfile))
 					cmd := BuildCommand{
 						Command:          p.Command,
 						CommandType:      mycmd,
@@ -811,7 +810,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 	arg1 := append(info.includes, info.defines...)
 
 	for _, srcPath := range files {
-		dstPathBase := srcPath	// `dstPathBase` contains the basename of the `srcPath`.
+		dstPathBase := srcPath // `dstPathBase` contains the basename of the `srcPath`.
 		var objdir string
 		if srcPath[0] == '$' {
 			// Auto generated pathes.
@@ -821,7 +820,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 				dstPathBase = srcPath[1:]
 			}
 			srcPath = filepath.Join(info.outputdir, dstPathBase)
-			dstPathBase = filepath.Base (dstPathBase)
+			dstPathBase = filepath.Base(dstPathBase)
 			objdir = normalizePath(filepath.Join(filepath.Dir(srcPath), buildDirectory))
 		} else {
 			// At this point, `srcPath` is a relative path rooted from `loaddir`
@@ -831,7 +830,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		sname := strings.Replace(normalizePath(srcPath), ":", "$:", -1)
+		sname := convertWindowsDrive(normalizePath(srcPath))
 		oname := normalizePath(filepath.Join(objdir, dstPathBase+".o"))
 		dname := normalizePath(filepath.Join(objdir, dstPathBase+".d"))
 		createList = append(createList, oname)
@@ -1025,7 +1024,7 @@ func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
-				NeedDepend:  ot.Need_Depend}
+				NeedDepend:  ot.NeedDepend}
 		}
 		otherRuleList[ext] = rule
 	}
@@ -1093,13 +1092,13 @@ func outputNinja() {
 			file.WriteString(" $\n  " + f)
 		}
 		for _, dep := range bs.Depends {
-			depstr := strings.Replace(dep, ":", "$:", 1)
+			depstr := convertWindowsDrive(dep)
 			file.WriteString(" $\n  " + depstr)
 		}
 		if 0 < len(bs.ImplicitDepends) {
-			file.WriteString(" $\n  | " + strings.Replace(bs.ImplicitDepends[0], ":", "$:", 1))
+			file.WriteString(" $\n  | " + convertWindowsDrive(bs.ImplicitDepends[0]))
 			for _, dep := range bs.ImplicitDepends[1:] {
-				file.WriteString(" $\n    " + strings.Replace(dep, ":", "$:", 1))
+				file.WriteString(" $\n    " + convertWindowsDrive(dep))
 			}
 		}
 		if bs.NeedCommandAlias {
@@ -1113,7 +1112,7 @@ func outputNinja() {
 		if len(bs.Args) > 0 {
 			tmpLines := make([]string, 0, len(bs.Args))
 			for _, t := range bs.Args {
-				tmpLines = append(tmpLines, strings.Replace(t, ":", "$:", 1))
+				tmpLines = append(tmpLines, convertWindowsDrive(t))
 			}
 			file.WriteString(fold(tmpLines, 120, "  options ="))
 			file.WriteString("\n")
@@ -1289,7 +1288,7 @@ func outputMSBuild(outdir, projname string) {
 		}
 
 		for _, infile := range command.InFiles {
-			targets = append(targets, strings.Replace(infile, "$:", ":", 1))
+			targets = append(targets, convertWindowsDrive(infile))
 		}
 	}
 
@@ -1299,4 +1298,16 @@ func outputMSBuild(outdir, projname string) {
 // Normalizes file path.
 func normalizePath(path string) string {
 	return filepath.ToSlash(filepath.Clean(path))
+}
+
+// Escapes ':' in path.
+func convertWindowsDrive(path string) string {
+	if filepath.IsAbs(path) && strings.Index(path, ":") == 1 {
+		drive := filepath.VolumeName(path)
+		if 0 < len(drive) {
+			drive = strings.Replace(strings.ToLower(drive), ":", "$:", 1)
+			path = drive + path[2:]
+		}
+	}
+	return path
 }
