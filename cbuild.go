@@ -885,16 +885,16 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 					return []string{}, err
 				}
 				ocmd := OtherRuleFile{
-					rule:     "compile" + srcExt,
-					compiler: compiler,
-					infile:   sname,
-					outfile:  oname,
-					include:  linc,
-					option:   lopt,
-					define:   ldef,
-					depend:   ""}
+					Rule:     "compile" + srcExt,
+					Compiler: compiler,
+					Infile:   sname,
+					Outfile:  oname,
+					Include:  linc,
+					Option:   lopt,
+					Define:   ldef,
+					Depend:   ""}
 				if rule.NeedDepend == true {
-					ocmd.depend = dname
+					ocmd.Depend = dname
 				}
 				otherRuleFileList = append(otherRuleFileList, ocmd)
 			} else {

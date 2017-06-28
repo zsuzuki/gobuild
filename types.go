@@ -95,14 +95,14 @@ type OtherRule struct {
 
 // OtherRuleFile is not default target(ex. .bin .dat ...) file information
 type OtherRuleFile struct {
-	rule     string
-	compiler string
-	infile   string
-	outfile  string
-	include  string
-	option   string
-	define   string
-	depend   string
+	Rule     string
+	Compiler string
+	Infile   string
+	Outfile  string
+	Include  string
+	Option   string
+	Define   string
+	Depend   string
 }
 
 // AppendBuild ...
