@@ -26,6 +26,10 @@ type StringList struct {
 	List           []string `yaml:",flow"`
 }
 
+func (s *StringList) Match (target string, targetType string) bool {
+	return (s.Target == "" || s.Target == target) && (s.Type == "" || s.Type == targetType)
+}
+
 // Variable make.yml variable section
 type Variable struct {
 	Name   string
@@ -35,6 +39,7 @@ type Variable struct {
 	Build  string
 }
 
+
 // Build in directory source list
 type Build struct {
 	Name    string
@@ -43,6 +48,11 @@ type Build struct {
 	Type    string
 	Deps    string
 	Source  []StringList `yaml:",flow"`
+}
+
+// Returns `true` if build target and target-type matched.
+func (b *Build) Match (target string, targetType string) bool {
+	return (b.Target == "" || b.Target == target) && (b.Type == "" || b.Type == targetType)
 }
 
 // Other make.yml other section
@@ -126,8 +136,3 @@ type BuildCommand struct {
 	NeedCommandAlias bool
 }
 
-// BuildResult is result by build(in directory)
-type BuildResult struct {
-	success    bool
-	createList []string
-}

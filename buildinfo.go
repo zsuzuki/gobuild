@@ -1,10 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
-	"errors"
 )
 
 // BuildInfo is build information in directory
@@ -54,7 +54,7 @@ func (info *BuildInfo) AddDefines(def string) {
 
 // Interpolates given string `s`.
 // Note: Handles $out, $in...
-func (info *BuildInfo) Interpolate (s string) (string, error){
+func (info *BuildInfo) Interpolate(s string) (string, error) {
 	if idx := strings.Index(s, "${"); 0 <= idx {
 		expanded, err := Interpolate(s[idx:], info.variables)
 		if err != nil {
@@ -67,14 +67,14 @@ func (info *BuildInfo) Interpolate (s string) (string, error){
 
 // Strictly interpolates given string `s`.
 // Note: Handles $out, $in...
-func (info *BuildInfo) StrictInterpolate (s string) (string, error){
+func (info *BuildInfo) StrictInterpolate(s string) (string, error) {
 	return Interpolate(s, info.variables)
 }
 
 // Retrieves the value associated to symbol `s`.
-func (info *BuildInfo) ExpandVariable (s string) (string, error) {
-	if str, exists := info.variables [s]; exists {
+func (info *BuildInfo) ExpandVariable(s string) (string, error) {
+	if str, exists := info.variables[s]; exists {
 		return info.Interpolate(str)
 	}
-	return "", errors.New (fmt.Sprintf ("Variable \"%s\" was not defined.", s))
+	return "", errors.New(fmt.Sprintf("Variable \"%s\" was not defined.", s))
 }
