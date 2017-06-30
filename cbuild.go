@@ -708,7 +708,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			for i, src := range sources {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					sources[i] = convertWindowsDrive(normalizePath(sabs))
+					sources[i] = escapeDriveColon(normalizePath(sabs))
 				} else if src == "always" {
 					sources[i] = src + "|"
 				} else {
@@ -763,7 +763,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 					pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
 				}
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-				outfile = convertWindowsDrive(normalizePath(outfile))
+				outfile = escapeDriveColon(normalizePath(outfile))
 				cmd := BuildCommand{
 					Command:          p.Command,
 					CommandType:      mycmd,
@@ -784,7 +784,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 						dst += ext
 					}
 					outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
-					outfile = convertWindowsDrive(normalizePath(outfile))
+					outfile = escapeDriveColon(normalizePath(outfile))
 					cmd := BuildCommand{
 						Command:          p.Command,
 						CommandType:      mycmd,
@@ -833,7 +833,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		sname := convertWindowsDrive(normalizePath(srcPath))
+		sname := escapeDriveColon(normalizePath(srcPath))
 		oname := normalizePath(filepath.Join(objdir, dstPathBase+".o"))
 		dname := normalizePath(filepath.Join(objdir, dstPathBase+".d"))
 		createList = append(createList, oname)
@@ -1095,13 +1095,13 @@ func outputNinja() {
 			file.WriteString(" $\n  " + f)
 		}
 		for _, dep := range bs.Depends {
-			depstr := convertWindowsDrive(dep)
+			depstr := escapeDriveColon(dep)
 			file.WriteString(" $\n  " + depstr)
 		}
 		if 0 < len(bs.ImplicitDepends) {
-			file.WriteString(" $\n  | " + convertWindowsDrive(bs.ImplicitDepends[0]))
+			file.WriteString(" $\n  | " + escapeDriveColon(bs.ImplicitDepends[0]))
 			for _, dep := range bs.ImplicitDepends[1:] {
-				file.WriteString(" $\n    " + convertWindowsDrive(dep))
+				file.WriteString(" $\n    " + escapeDriveColon(dep))
 			}
 		}
 		if bs.NeedCommandAlias {
@@ -1115,7 +1115,7 @@ func outputNinja() {
 		if len(bs.Args) > 0 {
 			tmpLines := make([]string, 0, len(bs.Args))
 			for _, t := range bs.Args {
-				tmpLines = append(tmpLines, convertWindowsDrive(t))
+				tmpLines = append(tmpLines, escapeDriveColon(t))
 			}
 			file.WriteString(fold(tmpLines, 120, "  options ="))
 			file.WriteString("\n")
@@ -1282,7 +1282,7 @@ build always: phony
 }
 
 // Creates *.vcxproj (for VisualStudio).
-func outputMSBuild(outdir, projname string) {
+func outputMSBuild(outdir, projname string) error {
 	var targets []string
 
 	for _, command := range commandList {
@@ -1291,11 +1291,12 @@ func outputMSBuild(outdir, projname string) {
 		}
 
 		for _, infile := range command.InFiles {
-			targets = append(targets, convertWindowsDrive(infile))
+			targets = append(targets, unescapeDriveColon(infile))
 		}
 	}
 
 	msbuild.ExportProject(targets, outdir, projname)
+	return nil
 }
 
 // Normalizes file path.
@@ -1304,7 +1305,7 @@ func normalizePath(path string) string {
 }
 
 // Escapes ':' in path.
-func convertWindowsDrive(path string) string {
+func escapeDriveColon(path string) string {
 	if filepath.IsAbs(path) && strings.Index(path, ":") == 1 {
 		drive := filepath.VolumeName(path)
 		if 0 < len(drive) {
@@ -1313,4 +1314,9 @@ func convertWindowsDrive(path string) string {
 		}
 	}
 	return path
+}
+
+// Convert back to escaped path
+func unescapeDriveColon(path string) string {
+	return strings.Replace(path, "$:", ":", 1)
 }
