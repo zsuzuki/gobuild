@@ -37,17 +37,19 @@ var (
 	targetType        string
 	targetName        string
 	outputRootDir     string
-	appendRules       map[string]AppendBuild
-	otherRuleList     map[string]OtherRule
-	commandList       []BuildCommand
-	otherRuleFileList []OtherRuleFile
 	verboseMode       bool
 	useResponse       bool
 	groupArchives     bool
 	responseNewline   bool
 	buildNinjaName    string
+
 	subNinjaList      []string
-	ProgramName       = getExeName()
+	appendRules       map[string]AppendBuild
+	otherRuleList     map[string]OtherRule
+	commandList       []BuildCommand
+	otherRuleFileList []OtherRuleFile
+
+	ProgramName = getExeName()
 
 	rx_truthy = regexp.MustCompile(`^\s*(?i:t(?:rue)?|y(?:es)?|on|1)(?:\s+.*)?$`)
 	rx_falsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)|no?|off|0)(?:\s+.*)?$`)
