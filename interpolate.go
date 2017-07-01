@@ -3,10 +3,10 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/pkg/errors"
 )
 
 /*
@@ -20,21 +20,21 @@ import (
 
 const recursionLimit = 100
 
-// Interpolates supplied `s` using `dict`.
+// Interpolate interpolates supplied `s` using `dict`.
 // If `s` contains unknown reference, treat it as an empty string ("").
 func Interpolate(s string, dict map[string]string) (string, error) {
 	return interpolate("", s, dict, 0, false)
 }
 
-// Interplates supplied `s` using `dict`.
+// StrictInterpolate interplates supplied `s` using `dict`.
 // If `s` contains unknown reference, treat it as an error.
-func StrictInterpolate(s string, dict map [string]string) (string, error) {
+func StrictInterpolate(s string, dict map[string]string) (string, error) {
 	return interpolate("", s, dict, 0, true)
 }
 
 func interpolate(accum string, rest string, dict map[string]string, limit int, strict bool) (string, error) {
 	if recursionLimit <= limit {
-		return "", errors.New("Recursion limit exceeded.")
+		return "", errors.New("recursion limit exceeded")
 	}
 	if idx := strings.Index(rest, "$"); 0 <= idx {
 		// `$` found
@@ -49,25 +49,25 @@ func interpolate(accum string, rest string, dict map[string]string, limit int, s
 		switch ch {
 		case '{':
 			if keyIdx := strings.Index(r[sz:], "}"); 0 <= keyIdx {
-				k := r[sz:sz+keyIdx]
+				k := r[sz : sz+keyIdx]
 				v, ok := dict[k]
 				if strict {
-					if ! ok {
-						return accum, errors.New (fmt.Sprintf ("Unknown reference ${%s} found.", k))
+					if !ok {
+						return accum, errors.Errorf("Unknown reference ${%s} found.", k)
 					}
 				}
 				return interpolate(accum, v+r[sz+keyIdx+1:], dict, limit+1, strict)
 			}
-			return accum, errors.New(fmt.Sprintf("Unmatched `{` found after \"%s\".", r))
+			return accum, errors.Errorf("Unmatched `{` found after \"%s\".", r)
 		case '$':
 			return interpolate(accum+"$", r[sz:], dict, limit+1, strict)
 		default:
 			if strict {
 				// Invalid $... sequence
-				return accum, errors.New(fmt.Sprintf("Invalid `$` sequence \"%s\" found.", r))
+				return accum, errors.Errorf("Invalid `$` sequence \"%s\" found.", r)
 			}
 			// Treat it as is...
-			return interpolate (accum + "$", r, dict, limit +1, false)
+			return interpolate(accum+"$", r, dict, limit+1, false)
 		}
 	} else {
 		// No `$` in `s`

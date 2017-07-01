@@ -72,7 +72,7 @@ func TestInterpolateError(t *testing.T) {
 		Convey("Exceeding recursion limit", func() {
 			_, err := Interpolate("${rec}", dict)
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "Recursion limit exceeded.")
+			So(err.Error(), ShouldEqual, "recursion limit exceeded")
 		})
 	})
 }
@@ -140,7 +140,7 @@ func TestStrictInterpolateErrors(t *testing.T) {
 		Convey("Exceeding recursion limit", func() {
 			_, err := StrictInterpolate("${rec}", dict)
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "Recursion limit exceeded.")
+			So(err.Error(), ShouldEqual, "recursion limit exceeded")
 		})
 	})
 }

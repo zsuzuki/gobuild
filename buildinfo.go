@@ -1,10 +1,11 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // BuildInfo is build information in directory
@@ -28,7 +29,7 @@ type BuildInfo struct {
 	tests          []string
 }
 
-// Retrieves command line option prefix
+// OptionPrefix retrieves command line option prefix
 func (info BuildInfo) OptionPrefix() string {
 	if pfx, exists := info.variables["option_prefix"]; exists {
 		return pfx
@@ -36,7 +37,7 @@ func (info BuildInfo) OptionPrefix() string {
 	return "-"
 }
 
-// Appends include path.
+// AddInclude appends include path.
 func (info *BuildInfo) AddInclude(path string) {
 	pfx := info.OptionPrefix()
 	if p := filepath.ToSlash(filepath.Clean(path)); strings.Index(p, " ") != -1 {
@@ -46,13 +47,13 @@ func (info *BuildInfo) AddInclude(path string) {
 	}
 }
 
-// Appends macro definitions.
+// AddDefines appends macro definitions.
 func (info *BuildInfo) AddDefines(def string) {
 	pfx := info.OptionPrefix()
 	info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, def))
 }
 
-// Interpolates given string `s`.
+// Interpolate interpolates given string `s`.
 // Note: Handles $out, $in...
 func (info *BuildInfo) Interpolate(s string) (string, error) {
 	if idx := strings.Index(s, "${"); 0 <= idx {
@@ -65,16 +66,16 @@ func (info *BuildInfo) Interpolate(s string) (string, error) {
 	return s, nil
 }
 
-// Strictly interpolates given string `s`.
+// StrictInterpolate strictly interpolates given string `s`.
 // Note: Handles $out, $in...
 func (info *BuildInfo) StrictInterpolate(s string) (string, error) {
 	return Interpolate(s, info.variables)
 }
 
-// Retrieves the value associated to symbol `s`.
+// ExpandVariable retrieves the value associated to symbol `s`.
 func (info *BuildInfo) ExpandVariable(s string) (string, error) {
 	if str, exists := info.variables[s]; exists {
 		return info.Interpolate(str)
 	}
-	return "", errors.New(fmt.Sprintf("Variable \"%s\" was not defined.", s))
+	return "", errors.Errorf("Variable \"%s\" is not defined", s)
 }
