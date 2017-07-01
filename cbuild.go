@@ -912,7 +912,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
 	if !Exists(pchSrc) {
-		Verbose("%s: \"%s\" does not exists.\n", ProgramName, pchSrc)
+		Verbose("%s: \"%s\" is not detected.\n", ProgramName, pchSrc)
 		return ""
 	}
 	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
