@@ -26,7 +26,8 @@ type StringList struct {
 	List           []string `yaml:",flow"`
 }
 
-func (s *StringList) Match (target string, targetType string) bool {
+// Checks build conditions are match or not.
+func (s *StringList) Match(target string, targetType string) bool {
 	return (s.Target == "" || s.Target == target) && (s.Type == "" || s.Type == targetType)
 }
 
@@ -39,7 +40,6 @@ type Variable struct {
 	Build  string
 }
 
-
 // Build in directory source list
 type Build struct {
 	Name    string
@@ -51,7 +51,7 @@ type Build struct {
 }
 
 // Returns `true` if build target and target-type matched.
-func (b *Build) Match (target string, targetType string) bool {
+func (b *Build) Match(target string, targetType string) bool {
 	return (b.Target == "" || b.Target == target) && (b.Type == "" || b.Type == targetType)
 }
 
@@ -80,8 +80,8 @@ type Data struct {
 	Prebuild      []Build      `yaml:",flow"`
 	Postbuild     []Build      `yaml:",flow"`
 	Source        []StringList `yaml:",flow"`
-	Convert_List  []StringList `yaml:",flow"`
-	Subdir        []StringList `yaml:",flow"`
+	ConvertList   []StringList `yaml:"convert_list,flow"`
+	Subdirs       []StringList `yaml:"subdir,flow"`
 	Tests         []StringList `yaml:",flow"`
 	Other         []Other      `yaml:",flow"`
 	SubNinja      []StringList `yaml:",flow"`
@@ -135,4 +135,3 @@ type BuildCommand struct {
 	ImplicitDepends  []string
 	NeedCommandAlias bool
 }
-

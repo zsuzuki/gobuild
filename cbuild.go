@@ -324,11 +324,11 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	}
 
 	files := getList(d.Source, info.target)
-	cvfiles := getList(d.Convert_List, info.target)
+	cvfiles := getList(d.ConvertList, info.target)
 	testfiles := getList(d.Tests, info.target)
 
 	// sub-directories
-	subdirs := getList(d.Subdir, info.target)
+	subdirs := getList(d.Subdirs, info.target)
 
 	subArtifacts := []string{}
 
@@ -554,7 +554,7 @@ func createConvert(info BuildInfo, loaddir string, createList []string, targetNa
 
 	clist := []string{}
 	for _, f := range createList {
-		clist = append(clist, JoinPathes(loaddir+f))
+		clist = append(clist, JoinPathes(loaddir, f))
 	}
 
 	cmd := BuildCommand{
@@ -657,98 +657,98 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 	return Target{}, "", false
 }
 
-//
-func replacePath(value string, addDir string) (string, string) {
-	url := strings.Split(value, " ")
-	ucmd := url[0]
-	if ucmd[0] == '$' {
-		ucmd = ucmd[1:]
-	}
-	p := JoinPathes(addDir, ucmd)
-	result := p
-	for i, uu := range url {
-		if i > 0 {
-			result += " " + uu
-		}
-	}
-	return result, p
+// Fixes command path (appeared at the 1st element).
+// Returns fixed command-line and command path
+func FixupCommandPath(command string, commandDir string) (commandLine string, commandPath string) {
+	args := strings.Split(command, " ")
+	cmd := args[0]
+	commandPath = JoinPathes(commandDir, cmd)
+	args[0] = commandPath
+	commandLine = strings.Join(args, " ")
+	return
 }
 
 //
 // compile files
 //
-func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
-	for _, p := range plist {
-		if !p.Match(info.target, targetType) {
+func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
+	for _, build := range buildItems {
+		if !build.Match(info.target, targetType) {
 			continue
 		}
 
 		// register prebuild
-		sources := getList(p.Source, info.target)
+		sources := getList(build.Source, info.target)
 		if len(sources) == 0 {
-			return fmt.Errorf("No sources for command `%s`", p.Name)
+			return fmt.Errorf("No sources for command `%s`", build.Name)
 		}
-		for i, src := range sources {
-			if src[0] == '$' {
-				sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-				sources[i] = escapeDriveColon(JoinPathes(sabs))
-			} else if src == "always" {
-				sources[i] = "always |"
-			} else {
-				if expanded, err := info.Interpolate(src); err == nil {
-					sources[i] = JoinPathes(loaddir, expanded)
+		{
+			// Fixes source elements
+			for i, src := range sources {
+				if src[0] == '$' {
+					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
+					sources[i] = escapeDriveColon(JoinPathes(sabs))
+				} else if src == "always" {
+					sources[i] = "always |"
 				} else {
-					return err
+					expanded, err := info.Interpolate(src)
+					if err != nil {
+						return err
+					}
+					sources[i] = JoinPathes(loaddir, expanded)
 				}
 			}
 		}
-		ur, ok := info.variables[p.Command]
+		buildCommand, ok := info.variables[build.Command]
 		if !ok {
-			return errors.Errorf("Missing build command \"%s\" (referenced from \"%s\")", p.Command, p.Name)
+			return errors.Errorf("Missing build command \"%s\" (referenced from \"%s\")", build.Command, build.Name)
 		}
-		mycmd := strings.Replace(JoinPathes(info.outputdir, p.Command), "/", "_", -1)
+		buildCommand, err := info.Interpolate(strings.Replace(buildCommand, "${selfdir}", loaddir, -1))
+		if err != nil {
+			return err
+		}
+		commandLabel := strings.Replace(JoinPathes(info.outputdir, build.Command), "/", "_", -1)
 		deps := []string{}
 
-		if _, af := appendRules[mycmd]; !af {
-			ur = strings.Replace(ur, "${selfdir}", loaddir, -1)
-			var err error
-			ur, err = info.Interpolate(ur)
-			if err != nil {
-				return err
-			}
-			if ur[0] == '$' {
-				r, d := replacePath(ur, info.outputdir)
-				abs, _ := filepath.Abs(d)
+		if _, ok = appendRules[commandLabel]; !ok {
+			// Create a rule...
+			// Fixes command path.
+			if buildCommand[0] == '$' {
+				r, d := FixupCommandPath(buildCommand[1:], info.outputdir)
+				abs, err := filepath.Abs(d)
+				if err != nil {
+					return errors.Wrapf(err, "Failed to obtain the absolute path for \"%s\"", d)
+				}
 				d = filepath.ToSlash(abs)
 				deps = append(deps, d)
-				ur = r
-			} else if strings.HasPrefix(ur, "../") || strings.HasPrefix(ur, "./") {
-				r, d := replacePath(ur, loaddir)
+				buildCommand = r
+			} else if strings.HasPrefix(buildCommand, "../") || strings.HasPrefix(buildCommand, "./") {
+				// Commands are relative to `make.yml`'s directory
+				r, d := FixupCommandPath(buildCommand, loaddir)
 				deps = append(deps, d)
-				ur = r
+				buildCommand = r
 			}
-			ur = strings.Replace(ur, "$target", info.target, -1)
 			useDeps := false
-			if p.Deps != "" {
+			if build.Deps != "" {
 				useDeps = true
 			}
 			ab := AppendBuild{
-				Command: ur,
-				Desc:    p.Command,
+				Command: strings.Replace(buildCommand, "$target", info.target, -1),
+				Desc:    build.Command,
 				Deps:    useDeps}
-			appendRules[mycmd] = ab
+			appendRules[commandLabel] = ab
 		}
 
-		if p.Name[0] != '$' || strings.HasPrefix(p.Name, "$target/") {
-			pn := p.Name
-			if pn[0] == '$' {
-				pn = strings.Replace(pn, "$target/", "/."+info.target+"/", 1)
+		if build.Name[0] != '$' || strings.HasPrefix(build.Name, "$target/") {
+			pn := build.Name
+			if pn[0] == '$' { // bulid.Name is "$target/..."
+				pn = strings.Replace(pn, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			}
 			outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
 			outfile = escapeDriveColon(JoinPathes(outfile))
 			cmd := BuildCommand{
-				Command:          p.Command,
-				CommandType:      mycmd,
+				Command:          build.Command,
+				CommandType:      commandLabel,
 				Depends:          deps,
 				InFiles:          sources,
 				OutFile:          outfile,
@@ -756,7 +756,7 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 			commandList = append(commandList, cmd)
 		} else {
 			// Found `$...`
-			ext := p.Name[1:] //filepath.Ext(p.Name)
+			ext := build.Name[1:] //filepath.Ext(build.Name)
 			for _, src := range sources {
 				dst := filepath.Base(src)
 				next := filepath.Ext(src)
@@ -768,8 +768,8 @@ func createPrebuild(info BuildInfo, loaddir string, plist []Build) error {
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
 				outfile = escapeDriveColon(JoinPathes(outfile))
 				cmd := BuildCommand{
-					Command:          p.Command,
-					CommandType:      mycmd,
+					Command:          build.Command,
+					CommandType:      commandLabel,
 					Depends:          deps,
 					InFiles:          []string{src},
 					OutFile:          outfile,
@@ -801,7 +801,7 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 		if srcPath[0] == '$' {
 			// Auto generated pathes.
 			if strings.HasPrefix(srcPath, "$target/") {
-				dstPathBase = strings.Replace(dstPathBase, "$target/", "/."+info.target+"/", 1)
+				dstPathBase = strings.Replace(dstPathBase, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			} else {
 				dstPathBase = srcPath[1:]
 			}
@@ -839,16 +839,19 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 		srcExt := filepath.Ext(srcPath)
 		if rule, exists := otherRuleList[srcExt]; exists {
 			// custom
-			linc := ""
-			if rule.needInclude {
-				linc = strings.Join(info.includes, " ")
-			}
-			ldef := ""
-			if rule.needDefine {
-				ldef = strings.Join(info.defines, " ")
-			}
-			lopt := ""
-			{
+			linc := (func() string {
+				if !rule.needInclude {
+					return ""
+				}
+				return strings.Join(info.includes, " ")
+			})()
+			ldef := (func() string {
+				if !rule.needDefine {
+					return ""
+				}
+				return strings.Join(info.defines, " ")
+			})()
+			lopt := (func() string {
 				opts := make([]string, 0, len(rule.Options))
 				for _, o := range rule.Options {
 					switch o {
@@ -862,8 +865,9 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 						opts = append(opts, o)
 					}
 				}
-				lopt = strings.Join(opts, " ")
-			}
+				return strings.Join(opts, " ")
+			})()
+
 			if compiler, ok := info.variables[rule.Compiler]; ok {
 				compiler, err := info.Interpolate(compiler)
 				if err != nil {
@@ -1152,6 +1156,7 @@ rule compile
     depfile = $depf
     deps = gcc
 {{- end}}
+
 {{- if .UsePCH}}
 rule gen_pch
     description = Create PCH: $desc
@@ -1159,6 +1164,7 @@ rule gen_pch
     depfile = $depf
     deps = gcc
 {{- end}}
+
 rule ar
     description = Archiving: $desc
 {{- if .UseResponse}}
@@ -1172,6 +1178,7 @@ rule ar
 {{- else}}
     command = $ar $options $out $in
 {{- end}}
+
 rule link
     description = Linking: $desc
 {{- if .UseResponse}}
@@ -1189,6 +1196,7 @@ rule link
     command = $link -o $out $in $options
     {{- end}}
 {{- end}}
+
 rule packager
     description = Packaging: $desc
     command = $packager $options $in $out

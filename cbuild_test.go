@@ -1,8 +1,8 @@
 package main
 
 import (
-	"testing"
 	"fmt"
+	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -63,6 +63,33 @@ func TestToBooleanUndefined(t *testing.T) {
 			Convey(fmt.Sprintf("\"%s\" should be `false`", addJunk), func() {
 				actual := ToBoolean(v)
 				So(actual, ShouldBeFalse)
+			})
+		}
+	})
+}
+
+func TestFixupCommandPath(t *testing.T) {
+	Convey("Test `FixupCommandPath`", t, func() {
+		cases := []struct {
+			arg1st    string
+			arg2nd    string
+			expect1st string
+			expect2nd string
+		}{
+			{"abc def ghi", "/usr/local",
+				"/usr/local/abc def ghi", "/usr/local/abc"},
+			{"$abc def ghi", "/usr/local",
+				"/usr/local/$abc def ghi", "/usr/local/$abc"},
+		}
+
+		for _, c := range cases {
+			Convey(fmt.Sprintf(`Test FixupCommandPath("%s", "%s") == ("%s", "%s")`,
+				c.arg1st, c.arg2nd,
+				c.expect1st, c.expect2nd), func() {
+
+				ea, eb := FixupCommandPath(c.arg1st, c.arg2nd)
+				So(ea, ShouldEqual, c.expect1st)
+				So(eb, ShouldEqual, c.expect2nd)
 			})
 		}
 	})
