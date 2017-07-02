@@ -30,7 +30,7 @@ type BuildInfo struct {
 }
 
 // OptionPrefix retrieves command line option prefix
-func (info BuildInfo) OptionPrefix() string {
+func (info *BuildInfo) OptionPrefix() string {
 	if pfx, exists := info.variables["option_prefix"]; exists {
 		return pfx
 	}
@@ -69,7 +69,14 @@ func (info *BuildInfo) Interpolate(s string) (string, error) {
 // StrictInterpolate strictly interpolates given string `s`.
 // Note: Handles $out, $in...
 func (info *BuildInfo) StrictInterpolate(s string) (string, error) {
-	return Interpolate(s, info.variables)
+	if idx := strings.Index(s, "${"); 0 <= idx {
+		expanded, err := StrictInterpolate(s[idx:], info.variables)
+		if err != nil {
+			return "", err
+		}
+		return s[:idx] + expanded, nil
+	}
+	return s, nil
 }
 
 // ExpandVariable retrieves the value associated to symbol `s`.
@@ -77,5 +84,5 @@ func (info *BuildInfo) ExpandVariable(s string) (string, error) {
 	if str, exists := info.variables[s]; exists {
 		return info.Interpolate(str)
 	}
-	return "", errors.Errorf("Variable \"%s\" is not defined", s)
+	return "", errors.Errorf("variable \"%s\" is not defined", s)
 }

@@ -1,56 +1,49 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestInterpolateLiteral(t *testing.T) {
-	dict := newDictionary()
-
-	Convey("Test with literals", t, func() {
-		Convey("\"\" should be \"\"", func() {
-			actual, err := Interpolate("", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "")
-		})
-		Convey("\"literal\" should be \"literal\"", func() {
-			actual, err := Interpolate("literal", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "literal")
-		})
-		Convey("\"foobarbaz$\" should be \"foobarbaz$\"", func() {
-			actual, err := Interpolate("foobarbaz$", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "foobarbaz$")
-		})
+	Convey("GIVEN: A test dictionary", t, func() {
+		dict := newDictionary()
+		for _, v := range []string{"", "literal", "foobarbaz$"} {
+			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", v), func() {
+				actual, err := Interpolate(v, dict)
+				Convey(fmt.Sprintf("THEN: Should be \"%s\"", v), func() {
+					So(err, ShouldBeNil)
+					So(actual, ShouldEqual, v)
+				})
+			})
+		}
 	})
 }
 
 func TestInterpolateExpansion(t *testing.T) {
-	dict := newDictionary()
-
-	Convey("Test expansions", t, func() {
-		Convey("Single level expansion", func() {
-			actual, err := Interpolate("${foo}", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "foo-value")
-		})
-		Convey("Nested expansion", func() {
-			actual, err := Interpolate("${baz}", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "baz-value, bar-value, foo-value")
-		})
-		Convey("Double $$ in string", func() {
-			actual, err := Interpolate("${foo}$$${bar}", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "foo-value$bar-value, foo-value")
-		})
-		Convey("Non existants", func() {
-			actual, err := Interpolate("${mokeke}moke", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "moke")
+	Convey("GIVEN: A Test dictionary", t, func() {
+		dict := newDictionary()
+		type testCase struct {
+			input    string
+			expected string
+		}
+		Convey("AND GIVEN: Test cases", func() {
+			cases := []testCase{
+				{input: "${foo}", expected: "foo-value"},
+				{input: "${baz}", expected: "baz-value, bar-value, foo-value"},
+				{input: "${foo}$$${bar}", expected: "foo-value$bar-value, foo-value"},
+				{input: "${mokeke}moke", expected: "moke"}}
+			for _, v := range cases {
+				Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", v.input), func() {
+					actual, err := Interpolate(v.input, dict)
+					Convey(fmt.Sprintf("THEN: Should be \"%s\"", v.expected), func() {
+						So(err, ShouldBeNil)
+						So(actual, ShouldEqual, v.expected)
+					})
+				})
+			}
 		})
 	})
 }
