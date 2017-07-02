@@ -190,7 +190,7 @@ func CollectConfigurations(info BuildInfo, outputDirectory string) (*[]string, e
 func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	// result.Successed = false // Named return value is initialized to 0
 	if outputDir[len(outputDir)-1] != '/' {
-		return nil, errors.New("Output directory should end with '/'")
+		return nil, errors.New("output directory should end with '/'")
 	}
 	Verbose("%s: Enter \"%s\"\n", ProgramName, outputDir)
 	defer Verbose("%s: Leave \"%s\"\n", ProgramName, outputDir)
@@ -198,13 +198,13 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	yamlSource := filepath.Join(outputDir, "make.yml")
 	buf, err := ioutil.ReadFile(yamlSource)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to read \"%s\"", yamlSource)
+		return nil, errors.Wrapf(err, "failed to read \"%s\"", yamlSource)
 	}
 
 	var d Data
 	err = yaml.Unmarshal(buf, &d)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to unmarshal \"%s\"", yamlSource)
+		return nil, errors.Wrapf(err, "failed to unmarshal \"%s\"", yamlSource)
 	}
 	ScannedConfigs = append(ScannedConfigs, yamlSource)
 
@@ -700,7 +700,7 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 		// register prebuild
 		sources := getList(build.Source, info.target)
 		if len(sources) == 0 {
-			return fmt.Errorf("No sources for command `%s`", build.Name)
+			return errors.Errorf("no sources for command `%s`", build.Name)
 		}
 		{
 			// Fixes source elements
@@ -721,7 +721,7 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 		}
 		buildCommand, ok := info.variables[build.Command]
 		if !ok {
-			return errors.Errorf("Missing build command \"%s\" (referenced from \"%s\")", build.Command, build.Name)
+			return errors.Errorf("missing build command \"%s\" (referenced from \"%s\")", build.Command, build.Name)
 		}
 		buildCommand, err := info.Interpolate(strings.Replace(buildCommand, "${selfdir}", loaddir, -1))
 		if err != nil {
@@ -737,7 +737,7 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 				r, d := FixupCommandPath(buildCommand[1:], info.outputdir)
 				abs, err := filepath.Abs(d)
 				if err != nil {
-					return errors.Wrapf(err, "Failed to obtain the absolute path for \"%s\"", d)
+					return errors.Wrapf(err, "failed to obtain the absolute path for \"%s\"", d)
 				}
 				d = filepath.ToSlash(abs)
 				deps = append(deps, d)
@@ -1058,7 +1058,7 @@ func outputNinja() error {
 	tPath := NewTransientOutput(option.ninjaFile)
 	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to create temporal output \"%s\"", tPath.TempOutput)
+		return errors.Wrapf(err, "failed to create temporal output \"%s\"", tPath.TempOutput)
 	}
 	defer file.Close()
 	defer tPath.Abort()
@@ -1066,7 +1066,7 @@ func outputNinja() error {
 	sink := bufio.NewWriter(file)
 	// execute build
 	if err = outputRules(sink); err != nil {
-		return errors.Wrapf(err, "Failed to emit rules.")
+		return errors.Wrapf(err, "failed to emit rules.")
 	}
 
 	// Emits rules for updating `build.ninja`
@@ -1131,10 +1131,10 @@ subninja {{$subninja}}
 	sink.Flush()
 
 	if err := file.Close(); err != nil {
-		return errors.Wrapf(err, "Closing \"%s\" failed.", file.Name())
+		return errors.Wrapf(err, "closing \"%s\" failed.", file.Name())
 	}
 	if err := tPath.Commit(); err != nil {
-		return errors.Wrapf(err, "Renaming \"%s\" to \"%s\" failed.", tPath.TempOutput, tPath.Output)
+		return errors.Wrapf(err, "renaming \"%s\" to \"%s\" failed.", tPath.TempOutput, tPath.Output)
 	}
 	Verbose("%s: Renaming %s to %s\n", ProgramName, tPath.TempOutput, tPath.Output)
 	return nil

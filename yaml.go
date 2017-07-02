@@ -86,7 +86,7 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	}
 	err := unmarshaler(&fixedSlot)
 	if err != nil {
-		return errors.Wrapf(err, "Unmarshaling failed on `StringList` fixed slot")
+		return errors.Wrapf(err, "unmarshaling failed on `StringList` fixed slot")
 	}
 	var items map[string]*[]string
 	err = unmarshaler(&items)

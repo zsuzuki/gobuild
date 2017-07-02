@@ -130,12 +130,12 @@ func TestStrictInterpolateErrors(t *testing.T) {
 		Convey("Unrecognized as error", func() {
 			_, err := StrictInterpolate("$foo", dict)
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "Invalid `$` sequence \"foo\" found.")
+			So(err.Error(), ShouldEqual, "invalid `$` sequence \"foo\" found.")
 		})
 		Convey("Non existants", func() {
 			_, err := StrictInterpolate("${mokeke}moke", dict)
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "Unknown reference ${mokeke} found.")
+			So(err.Error(), ShouldEqual, "unknown reference ${mokeke} found.")
 		})
 		Convey("Exceeding recursion limit", func() {
 			_, err := StrictInterpolate("${rec}", dict)

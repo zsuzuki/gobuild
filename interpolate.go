@@ -53,18 +53,18 @@ func interpolate(accum string, rest string, dict map[string]string, limit int, s
 				v, ok := dict[k]
 				if strict {
 					if !ok {
-						return accum, errors.Errorf("Unknown reference ${%s} found.", k)
+						return accum, errors.Errorf("unknown reference ${%s} found.", k)
 					}
 				}
 				return interpolate(accum, v+r[sz+keyIdx+1:], dict, limit+1, strict)
 			}
-			return accum, errors.Errorf("Unmatched `{` found after \"%s\".", r)
+			return accum, errors.Errorf("unmatched `{` found after \"%s\".", r)
 		case '$':
 			return interpolate(accum+"$", r[sz:], dict, limit+1, strict)
 		default:
 			if strict {
 				// Invalid $... sequence
-				return accum, errors.Errorf("Invalid `$` sequence \"%s\" found.", r)
+				return accum, errors.Errorf("invalid `$` sequence \"%s\" found.", r)
 			}
 			// Treat it as is...
 			return interpolate(accum+"$", r, dict, limit+1, false)
