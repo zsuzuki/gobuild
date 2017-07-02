@@ -1,11 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"gopkg.in/yaml.v2"
 	"testing"
 
-	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
-	"gopkg.in/yaml.v2"
 )
 
 func TestUnmarshalStringList(t *testing.T) {
