@@ -1,5 +1,101 @@
 package main
 
+import (
+	"fmt"
+
+	"github.com/pkg/errors"
+	"gopkg.in/yaml.v2"
+)
+
+// KnownBuildType represents the `known` build type
+type KnownBuildType string
+
+const (
+	// Common represents common definitions for all build types.
+	Common KnownBuildType = "list"
+	// Debug represents definitions for the `debug` build.
+	Debug KnownBuildType = "debug"
+	// Release represents definitions for the `release` build.
+	Release KnownBuildType = "release"
+	// Develop represents definitions for the `develop` build.
+	Develop KnownBuildType = "develop"
+	// DevelopRelease represents definitions for the `develop-release` build (i.e. beta).
+	DevelopRelease KnownBuildType = "develop-release"
+	// Product represents definitions for the `product` build (for shipping).
+	Product KnownBuildType = "product"
+)
+
+// KnownBuildTypes lists all of `known` build types.
+var KnownBuildTypes = [...]KnownBuildType{
+	Common,
+	Debug,
+	Release,
+	Develop,
+	DevelopRelease,
+	Product}
+
+// String returns the string representation of the `KnownBuildType`
+func (t KnownBuildType) String() string {
+	return string(t)
+}
+
+// StringList make.yml string list('- list: ...')
+type StringList struct {
+	Type   string
+	Target string
+	items  map[string](*[]string)
+}
+
+// Match checks build conditions are match or not.
+func (s *StringList) Match(target string, targetType string) bool {
+	return (s.Target == "" || s.Target == target) && (s.Type == "" || s.Type == targetType)
+}
+
+// Items retrieves list associated to `key`.
+// Key should be a `string` or can convert to `string` (via .String() method)
+// Returns pointer to underlying array (for modifying contents).
+func (s *StringList) Items(key interface{}) *[]string {
+	if k, ok := key.(string); ok {
+		return s.getItems(k)
+	}
+	if k, ok := key.(fmt.Stringer); ok {
+		return s.getItems(k.String())
+	}
+	return nil
+}
+
+func (s *StringList) getItems(key string) *[]string {
+	if v, ok := s.items[key]; ok {
+		if v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+// UnmarshalYAML is the custom handler for mapping YAML to `StringList`
+func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
+	var fixedSlot struct {
+		Type   string
+		Target string
+	}
+	err := unmarshaler(&fixedSlot)
+	if err != nil {
+		return errors.Wrapf(err, "Unmarshaling failed on `StringList` fixed slot")
+	}
+	var items map[string]*[]string
+	err = unmarshaler(&items)
+	if err != nil {
+		if _, ok := err.(*yaml.TypeError); !ok {
+			return err
+		}
+	}
+	s.Type = fixedSlot.Type
+	s.Target = fixedSlot.Target
+	s.items = items
+	return nil
+}
+
 // Packager make.yml package information
 type Packager struct {
 	Target string
@@ -12,23 +108,6 @@ type Target struct {
 	Type     string
 	ByTarget string `yaml:"by_target"`
 	Packager Packager
-}
-
-// StringList make.yml string list('- list: ...')
-type StringList struct {
-	Type           string
-	Target         string
-	Debug          []string `yaml:",flow"`
-	Release        []string `yaml:",flow"`
-	Develop        []string `yaml:",flow"`
-	DevelopRelease []string `yaml:",flow"`
-	Product        []string `yaml:",flow"`
-	List           []string `yaml:",flow"`
-}
-
-// Checks build conditions are match or not.
-func (s *StringList) Match(target string, targetType string) bool {
-	return (s.Target == "" || s.Target == target) && (s.Type == "" || s.Type == targetType)
 }
 
 // Variable make.yml variable section
@@ -50,7 +129,7 @@ type Build struct {
 	Source  []StringList `yaml:",flow"`
 }
 
-// Returns `true` if build target and target-type matched.
+// Match returns `true` if build target and target-type matched.
 func (b *Build) Match(target string, targetType string) bool {
 	return (b.Target == "" || b.Target == target) && (b.Type == "" || b.Type == targetType)
 }
