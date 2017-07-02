@@ -1,4 +1,4 @@
-// Schema definitons for values from `make.yml`.
+// Schema definitions for values from `make.yml`.
 package main
 
 import (
