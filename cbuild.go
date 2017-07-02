@@ -4,8 +4,10 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -29,19 +31,18 @@ const (
 )
 
 var (
-	isDebug           bool
-	isRelease         bool
-	isProduct         bool
-	isDevelop         bool
-	isDevelopRelease  bool
-	targetType        string
-	targetName        string
-	outputRootDir     string
-	verboseMode       bool
-	useResponse       bool
-	groupArchives     bool
-	responseNewline   bool
-	buildNinjaName    string
+	option struct {
+		targetType string
+		targetName string
+		outputDir  string
+		verbose    bool
+		ninjaFile  string
+		variant    string
+	}
+
+	useResponse     bool
+	groupArchives   bool
+	responseNewline bool
 
 	subNinjaList      []string
 	appendRules       map[string]AppendBuild
@@ -49,10 +50,14 @@ var (
 	commandList       []BuildCommand
 	otherRuleFileList []OtherRuleFile
 
+	// ScannedConfigs remembers all scanned configuration files.
+	ScannedConfigs []string
+
+	// ProgramName holds invoked program name.
 	ProgramName = getExeName()
 
-	rx_truthy = regexp.MustCompile(`^\s*(?i:t(?:rue)?|y(?:es)?|on|1)(?:\s+.*)?$`)
-	rx_falsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)|no?|off|0)(?:\s+.*)?$`)
+	rxTruthy = regexp.MustCompile(`^\s*(?i:t(?:rue)?|y(?:es)?|on|1)(?:\s+.*)?$`)
+	rxFalsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)|no?|off|0)(?:\s+.*)?$`)
 )
 
 // The entry point.
@@ -60,26 +65,33 @@ func main() {
 
 	//ProgramName := getExeName()
 
-	gen_msbuild := false
+	genMSBuild := false
 	projdir := ""
 	projname := ""
+	var (
+		isDebug          bool
+		isRelease        bool
+		isProduct        bool
+		isDevelop        bool
+		isDevelopRelease bool
+	)
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [<target>]\n", ProgramName)
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	flag.BoolVar(&verboseMode, "v", false, "verbose mode")
+	flag.BoolVar(&option.verbose, "v", false, "verbose mode")
 	flag.BoolVar(&isRelease, "release", false, "release build")
 	flag.BoolVar(&isDebug, "debug", true, "debug build")
 	flag.BoolVar(&isDevelop, "develop", false, "develop(beta) build")
 	flag.BoolVar(&isDevelopRelease, "develop_release", false, "develop(beta) release build")
 	flag.BoolVar(&isProduct, "product", false, "for production build")
-	flag.StringVar(&targetType, "type", "default", "build target type")
-	flag.StringVar(&targetName, "t", "", "build target name")
-	flag.StringVar(&outputRootDir, "o", "build", "build directory")
-	flag.StringVar(&buildNinjaName, "f", "build.ninja", "output build.ninja filename")
-	flag.BoolVar(&gen_msbuild, "msbuild", false, "Export MSBuild project")
+	flag.StringVar(&option.targetType, "type", "default", "build target type")
+	flag.StringVar(&option.targetName, "t", "", "build target name")
+	flag.StringVar(&option.outputDir, "o", "build", "build directory")
+	flag.StringVar(&option.ninjaFile, "f", "build.ninja", "output build.ninja filename")
+	flag.BoolVar(&genMSBuild, "msbuild", false, "Export MSBuild project")
 	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
 	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
 	showVersionAndExit := flag.Bool("version", false, "display version")
@@ -90,29 +102,29 @@ func main() {
 		os.Exit(0)
 	}
 
-	switch {
-	case isDevelop:
-		isDebug = false
-	case isDevelopRelease:
-		isDevelop = false
-		isDebug = false
-	case isRelease:
-		isDevelopRelease = false
-		isDevelop = false
-		isDebug = false
-	case isProduct:
-		isDevelopRelease = false
-		isRelease = false
-		isDevelop = false
-		isDebug = false
+	option.variant = Debug.String()
+	if isDebug {
+		option.variant = Debug.String()
 	}
+	if isProduct {
+		option.variant = Product.String()
+	}
+	if isRelease {
+		option.variant = Release.String()
+	}
+	if isDevelopRelease {
+		option.variant = DevelopRelease.String()
+	}
+	if isDevelop {
+		option.variant = Develop.String()
+	}
+
 	useResponse = false
 	groupArchives = false
 	responseNewline = false
 
-	ra := flag.Args()
-	if 0 < flag.NArg() && targetName == "" {
-		targetName = ra[0]
+	if 0 < flag.NArg() && option.targetName == "" {
+		option.targetName = flag.Arg(0)
 	}
 
 	appendRules = map[string]AppendBuild{}
@@ -121,8 +133,8 @@ func main() {
 	otherRuleFileList = []OtherRuleFile{}
 	subNinjaList = []string{}
 
-	if targetName != "" {
-		Verbose("%s: Target is \"%s\"\n", ProgramName, targetName)
+	if option.targetName != "" {
+		Verbose("%s: Target is \"%s\"\n", ProgramName, option.targetName)
 	}
 	buildinfo := BuildInfo{
 		variables:      map[string]string{"option_prefix": "-"},
@@ -132,8 +144,8 @@ func main() {
 		archiveOptions: []string{},
 		convertOptions: []string{},
 		linkOptions:    []string{},
-		selectTarget:   targetName,
-		target:         targetName}
+		selectTarget:   option.targetName,
+		target:         option.targetName}
 
 	if _, err := CollectConfigurations(buildinfo, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "%s:error: %v\n", ProgramName, err)
@@ -143,7 +155,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: No commands to run.\n", ProgramName)
 		os.Exit(0)
 	}
-	if gen_msbuild {
+	if genMSBuild {
 		Verbose("%s: Creates VC++ project file(s).\n", ProgramName)
 		outputMSBuild(projdir, projname)
 	} else {
@@ -164,7 +176,7 @@ func getExeName() string {
 	return filepath.ToSlash(name)
 }
 
-// Collects configurations recursively.
+// CollectConfigurations collects configurations recursively.
 func CollectConfigurations(info BuildInfo, outputDirectory string) (*[]string, error) {
 	var odir string
 	if outputDirectory == "" {
@@ -194,6 +206,7 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to unmarshal \"%s\"", yamlSource)
 	}
+	ScannedConfigs = append(ScannedConfigs, yamlSource)
 
 	info.mydir = outputDir
 	//
@@ -201,7 +214,7 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	//
 	currentTarget, _, ok := getTarget(info, d.Target)
 	if !ok {
-		return nil, errors.New("No targets.")
+		return nil, errors.New("no targets")
 	}
 	if info.target == "" {
 		info.target = currentTarget.Name
@@ -209,8 +222,8 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	}
 	info.selectTarget = ""
 
-	if level == 0 && targetType == "default" {
-		targetType = checkType(d.Variable)
+	if level == 0 && option.targetType == "default" {
+		option.targetType = checkType(d.Variable)
 	}
 
 	// Merge variable definitions (parent + current).
@@ -236,21 +249,21 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	optionPrefix := info.OptionPrefix()
 
 	if level == 0 {
-		switch {
-		case isProduct:
-			outputRootDir = JoinPathes(outputRootDir, targetType, "Product")
-		case isDevelop:
-			outputRootDir = JoinPathes(outputRootDir, targetType, "Develop")
-		case isDevelopRelease:
-			outputRootDir = JoinPathes(outputRootDir, targetType, "DevelopRelease")
-		case isRelease:
-			outputRootDir = JoinPathes(outputRootDir, targetType, "Release")
+		switch option.variant {
+		case Product.String():
+			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Product")
+		case Develop.String():
+			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Develop")
+		case DevelopRelease.String():
+			option.outputDir = JoinPathes(option.outputDir, option.targetType, "DevelopRelease")
+		case Release.String():
+			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Release")
 		default:
-			outputRootDir = JoinPathes(outputRootDir, targetType, "Debug")
+			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Debug")
 		}
 	}
 
-	info.outputdir = JoinPathes(outputRootDir, outputDir) + "/" // Proofs '/' ending
+	info.outputdir = JoinPathes(option.outputDir, outputDir) + "/" // Proofs '/' ending
 
 	// Constructs include path arguments.
 	for _, pth := range getList(d.Include, info.target) {
@@ -411,7 +424,7 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 	}
 
 	Verbose("%s: Artifacts in \"%s\":\n", ProgramName, outputDir)
-	if verboseMode {
+	if option.verbose {
 		for _, rc := range result {
 			fmt.Fprintf(os.Stderr, "#   %s\n", rc)
 		}
@@ -425,19 +438,24 @@ func traverse(info BuildInfo, outputDir string, level int) (*[]string, error) {
 func getList(block []StringList, targetName string) []string {
 	lists := []string{}
 	for _, item := range block {
-		if item.Match(targetName, targetType) {
-			lists = append(lists, item.List...)
-			switch {
-			case isDebug:
-				lists = append(lists, item.Debug...)
-			case isDevelop:
-				lists = append(lists, item.Develop...)
-			case isRelease:
-				lists = append(lists, item.Release...)
-			case isDevelopRelease:
-				lists = append(lists, item.DevelopRelease...)
-			case isProduct:
-				lists = append(lists, item.Product...)
+		if item.Match(targetName, option.targetType) {
+			appender := func(key interface{}) {
+				if l := item.Items(key); l != nil {
+					lists = append(lists, *l...)
+				}
+			}
+			appender(Common)
+			switch option.variant {
+			case Debug.String():
+				appender(Debug)
+			case Develop.String():
+				appender(Develop)
+			case Release.String():
+				appender(Release)
+			case DevelopRelease.String():
+				appender(DevelopRelease)
+			case Product.String():
+				appender(Product)
 			default:
 				/* NO-OP */
 			}
@@ -463,14 +481,14 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 //
 func createArchive(info BuildInfo, inputs []string, targetName string) (string, error) {
 
-	var archiveName string
-	switch targetType {
-	case "WIN32":
-		archiveName = targetName + ".lib"
-	default:
-		archiveName = fmt.Sprintf("lib%s.a", targetName)
-	}
-	archiveName = JoinPathes(info.outputdir, archiveName)
+	archiveName := (func() string {
+		switch option.targetType {
+		case "WIN32":
+			return JoinPathes(info.outputdir, targetName+".lib")
+		default:
+			return JoinPathes(info.outputdir, fmt.Sprintf("lib%s.a", targetName))
+		}
+	})()
 
 	arCommand, e := info.ExpandVariable("archiver")
 	if e != nil {
@@ -526,7 +544,7 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 
 	if packager.Target != "" {
 		// package
-		pkgname := JoinPathes(outputRootDir, targetName, packager.Target)
+		pkgname := JoinPathes(option.outputDir, targetName, packager.Target)
 		pkgr, e := info.ExpandVariable("packager")
 		if e != nil {
 			return e
@@ -648,7 +666,7 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 				}
 			}
 		}
-		if len(tlist) > 0 {
+		if 0 < len(tlist) {
 			t := tlist[0]
 			if info.target == "" {
 				return t, "_" + t.Name, true
@@ -659,7 +677,7 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 	return Target{}, "", false
 }
 
-// Fixes command path (appeared at the 1st element).
+// FixupCommandPath fixes command path (appeared at the 1st element).
 // Returns fixed command-line and command path
 func FixupCommandPath(command string, commandDir string) (commandLine string, commandPath string) {
 	args := strings.Split(command, " ")
@@ -675,7 +693,7 @@ func FixupCommandPath(command string, commandDir string) (commandLine string, co
 //
 func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 	for _, build := range buildItems {
-		if !build.Match(info.target, targetType) {
+		if !build.Match(info.target, option.targetType) {
 			continue
 		}
 
@@ -916,27 +934,28 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 // Create pre-compiled header if possible.
 func createPCH(info BuildInfo, srcdir string, compiler string) string {
 	const pchName = "00-common-prefix.hpp"
-	pchSrc := filepath.ToSlash(filepath.Join(srcdir, pchName))
+	pchSrc := JoinPathes(srcdir, pchName)
 	if !Exists(pchSrc) {
 		Verbose("%s: \"%s\" is not detected.\n", ProgramName, pchSrc)
 		return ""
 	}
 	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
-	dstdir := filepath.Join(info.outputdir, srcdir, buildDirectory)
-	pchDst := filepath.ToSlash(filepath.Join(dstdir, pchName+".pch"))
+	pchDst := JoinPathes(info.outputdir, srcdir, buildDirectory, pchName+".pch")
 	Verbose("%s: Create PCH \"%s\"\n", ProgramName, pchDst)
 	args := append(info.includes, info.defines...)
 	for _, opt := range info.options {
-		switch opt {
-		case "$out":
-			args = append(args, pchDst)
-		case "$dep":
-			args = append(args, pchDst+".dep")
-		case "$in":
-			args = append(args, pchSrc)
-		default:
-			args = append(args, opt)
-		}
+		args = append(args, (func(o string) string {
+			switch o {
+			case "$out":
+				return pchDst
+			case "$dep":
+				return pchDst + ".dep"
+			case "$in":
+				return pchSrc
+			default:
+				return o
+			}
+		})(opt))
 	}
 	// PCH source found.
 	Verbose("%s: PCH creation command line is \"%s\".\n", ProgramName, strings.Join(args, " "))
@@ -952,6 +971,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 	return pchDst
 }
 
+// Exists checks `filename` existence.
 func Exists(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil
@@ -962,7 +982,7 @@ func Exists(filename string) bool {
 //
 func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
 	for _, ot := range olist {
-		if ot.Type != "" && ot.Type != targetType {
+		if ot.Type != "" && ot.Type != option.targetType {
 			continue
 		}
 
@@ -1033,9 +1053,9 @@ func checkType(vlist []Variable) string {
 
 // Creates *.ninja file.
 func outputNinja() error {
-	Verbose("%s: Creates \"%s\"\n", ProgramName, buildNinjaName)
+	Verbose("%s: Creates \"%s\"\n", ProgramName, option.ninjaFile)
 
-	tPath := NewTransientOutput(buildNinjaName)
+	tPath := NewTransientOutput(option.ninjaFile)
 	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to create temporal output \"%s\"", tPath.TempOutput)
@@ -1043,33 +1063,37 @@ func outputNinja() error {
 	defer file.Close()
 	defer tPath.Abort()
 	Verbose("%s: Creating transient output \"%s\"\n", ProgramName, tPath.TempOutput)
-
+	sink := bufio.NewWriter(file)
 	// execute build
-	if err = outputRules(file); err != nil {
+	if err = outputRules(sink); err != nil {
 		return errors.Wrapf(err, "Failed to emit rules.")
 	}
+
+	// Emits rules for updating `build.ninja`
 	type WriteContext struct {
-		Commands   []BuildCommand
-		OtherRules []OtherRuleFile
-		SubNinjas  []string
+		Commands      []BuildCommand
+		OtherRules    []OtherRuleFile
+		SubNinjas     []string
+		NinjaFile     string
+		ConfigSources []string
 	}
 	ctx := WriteContext{
-		Commands:   commandList,
-		OtherRules: otherRuleFileList,
-		SubNinjas:  subNinjaList}
-	funcs := template.FuncMap{"escape_drive": escapeDriveColon}
+		Commands:      commandList,
+		OtherRules:    otherRuleFileList,
+		SubNinjas:     subNinjaList,
+		NinjaFile:     option.ninjaFile,
+		ConfigSources: ScannedConfigs}
+	funcs := template.FuncMap{
+		"escape_drive": escapeDriveColon,
+		"join":         strings.Join}
 	commandTemplate := template.Must(template.New("rules").Funcs(funcs).Parse(`# Commands
-{{- define "INFILES"}}
-    {{- range $in := .}} {{$in}}{{end}}
-{{- end}}
-{{- define "DEPS"}}
-    {{- if .}}{{range $dep := .}} {{$dep}}{{end}}{{end}}
-{{- end}}
 {{- define "IMPDEPS"}}
-    {{- if .}} |{{range $impdep := .}} {{$impdep}}{{end}}{{- end}}
+    {{- if .}} | {{join . " "}}{{end}}
 {{- end}}
+build {{.NinjaFile}} : update_ninja_file {{join .ConfigSources " "}}
+    desc = {{.NinjaFile}}
 {{range $c := .Commands}}
-build {{$c.OutFile}} : {{$c.CommandType}}{{template "INFILES" $c.InFiles}}{{template "DEPS" $c.Depends}}{{template "IMPDEPS" $c.ImplicitDepends}}
+build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depends " "}} {{template "IMPDEPS" $c.ImplicitDepends}}
     desc = {{$c.OutFile}}
 {{- if $c.NeedCommandAlias}}
     {{$c.CommandType}} = {{$c.Command}}
@@ -1078,7 +1102,7 @@ build {{$c.OutFile}} : {{$c.CommandType}}{{template "INFILES" $c.InFiles}}{{temp
     depf = {{$c.DepFile}}
 {{- end}}
 {{- if $c.Args}}
-    options ={{range $a := $c.Args}} {{$a}}{{end}}
+    options = {{join $c.Args " "}}
 {{- end}}
 {{end}}
 # Other rules
@@ -1102,7 +1126,10 @@ subninja {{$subninja}}
 {{end}}
 {{end}}
 `))
-	commandTemplate.Execute(file, ctx)
+	commandTemplate.Execute(sink, ctx)
+
+	sink.Flush()
+
 	if err := file.Close(); err != nil {
 		return errors.Wrapf(err, "Closing \"%s\" failed.", file.Name())
 	}
@@ -1134,7 +1161,7 @@ subninja {{$subninja}}
 //}
 
 // Emits common rules.
-func outputRules(file *os.File) error {
+func outputRules(file io.Writer) error {
 	type RuleContext struct {
 		Platform           string
 		UseResponse        bool
@@ -1144,6 +1171,7 @@ func outputRules(file *os.File) error {
 		OtherRules         map[string]OtherRule
 		AppendRules        map[string]AppendBuild
 		UsePCH             bool
+		NinjaUpdater       string
 	}
 	//println("Platform: " + targetType)
 	tmpl := template.Must(template.New("common").Parse(`# Rule definitions
@@ -1170,11 +1198,7 @@ rule gen_pch
 rule ar
     description = Archiving: $desc
 {{- if .UseResponse}}
-    {{- if eq .Platform "WIN32"}}
-    command = $ar $options /out:$out @$out.rsp
-    {{- else}}
-    command = $ar $options $out @$out.rsp
-    {{- end}}
+    command = $ar $options {{if eq .Platform "WIN32"}}/out:$out{{else}}$out{{end}} @$out.rsp
     rspfile = $out.rsp
     rspfile_content = {{if .NewlineAsDelimiter}}$in_newline{{else}}$in{{end}}
 {{- else}}
@@ -1224,19 +1248,25 @@ rule {{$k}}
     deps = gcc
     {{- end}}
 {{end}}
+rule update_ninja_file
+    description = Update $desc
+    command     = {{.NinjaUpdater}}
+    generator   = 1
+
 build always: phony
 # end of [Rule definitions]
 `))
 
 	ctx := RuleContext{
-		Platform:           targetType,
+		Platform:           option.targetType,
 		UseResponse:        useResponse,
 		NewlineAsDelimiter: responseNewline,
 		GroupArchives:      groupArchives,
-		OutputDirectory:    filepath.ToSlash(outputRootDir),
+		OutputDirectory:    filepath.ToSlash(option.outputDir),
 		OtherRules:         otherRuleList,
 		AppendRules:        appendRules,
-		UsePCH:             true}
+		UsePCH:             true,
+		NinjaUpdater:       strings.Join(os.Args, " ")}
 
 	return tmpl.Execute(file, ctx)
 }
@@ -1259,7 +1289,7 @@ func outputMSBuild(outdir, projname string) error {
 	return nil
 }
 
-// Joins suppiled path components and normalize the result.
+// JoinPathes joins suppiled path components and normalize the result.
 func JoinPathes(pathes ...string) string {
 	return filepath.ToSlash(filepath.Clean(filepath.Join(pathes...)))
 }
@@ -1283,24 +1313,24 @@ func unescapeDriveColon(path string) string {
 
 // Verbose output if wanted
 func Verbose(format string, args ...interface{}) {
-	if verboseMode {
+	if option.verbose {
 		fmt.Fprintf(os.Stderr, format, args...)
 	}
 }
 
-// Emit a warning to `os.Stderr`
+// Warn emit a warning to `os.Stderr`
 func Warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "%s:warning:", ProgramName)
 	fmt.Fprintf(os.Stderr, format, args...)
 	fmt.Fprintln(os.Stderr)
 }
 
-// Converts passed string to boolean.
+// ToBoolean converts passed string to boolean.
 func ToBoolean(s string) bool {
-	if rx_truthy.MatchString(s) {
+	if rxTruthy.MatchString(s) {
 		return true
 	}
-	if rx_falsy.MatchString(s) {
+	if rxFalsy.MatchString(s) {
 		return false
 	}
 	Warn("Ambiguous boolean \"%s\" found", s)
@@ -1308,7 +1338,7 @@ func ToBoolean(s string) bool {
 }
 
 func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
-	if v.Type != "" && v.Type != targetType {
+	if v.Type != "" && v.Type != option.targetType {
 		return
 	}
 	if v.Target != "" && v.Target != info.target {
@@ -1316,20 +1346,27 @@ func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
 	}
 	if v.Build != "" {
 		bld := strings.ToLower(v.Build)
-		if isDebug && bld != "debug" {
-			return
-		}
-		if isRelease && bld != "release" {
-			return
-		}
-		if isDevelop && bld != "develop" {
-			return
-		}
-		if isDevelopRelease && bld != "develop_release" {
-			return
-		}
-		if isProduct && bld != "product" {
-			return
+		switch option.variant {
+		case Debug.String():
+			if bld != "debug" {
+				return
+			}
+		case Release.String():
+			if bld != "release" {
+				return
+			}
+		case Develop.String():
+			if bld != "develop" {
+				return
+			}
+		case DevelopRelease.String():
+			if bld != "develop_release" {
+				return
+			}
+		case Product.String():
+			if bld != "product" {
+				return
+			}
 		}
 	}
 	return v.Value, true
