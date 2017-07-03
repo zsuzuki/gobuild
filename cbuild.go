@@ -202,8 +202,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 
 	var d Data
-	err = yaml.Unmarshal(buf, &d)
-	if err != nil {
+	if err = yaml.Unmarshal(buf, &d); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal \"%s\"", yamlSource)
 	}
 	ScannedConfigs = append(ScannedConfigs, yamlSource)
@@ -334,7 +333,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 		subNinjaList = append(subNinjaList, subninja)
 	}
 
-	if err = createOtherRule(info, d.Other, optionPrefix); err != nil {
+	if err = registerOtherRules(&otherRuleList, info, d.Other); err != nil {
 		return nil, err
 	}
 
@@ -367,7 +366,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 	commandList = append(commandList, cmds...)
 	// create compile list
-	cmds, artifacts, err := compileFiles(info, relChildDir, files)
+	cmds, artifacts, err := makeCompileCommands(info, &otherRuleList, relChildDir, files)
 	if err != nil {
 		return nil, err
 	}
@@ -613,7 +612,7 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 
 	for _, f := range inputs {
 		// first, compile a test driver
-		objcmds, artifacts, err := compileFiles(info, loaddir, []string{f})
+		objcmds, artifacts, err := makeCompileCommands(info, &otherRuleList, loaddir, []string{f})
 		result = append(result, objcmds...)
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
 		cmds, err := makeLinkCommand(
@@ -811,7 +810,11 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 }
 
 // Build command for compiling C, C++...
-func compileFiles(info BuildInfo, loaddir string, files []string) ([]*BuildCommand, []string, error) {
+func makeCompileCommands(
+	info BuildInfo,
+	otherDict *map[string]OtherRule,
+	loaddir string, files []string) ([]*BuildCommand, []string, error) {
+
 	artifactPathes := make([]string, 0, len(files))
 	result := make([]*BuildCommand, 0, len(files))
 	if len(files) == 0 {
@@ -874,7 +877,8 @@ func compileFiles(info BuildInfo, loaddir string, files []string) ([]*BuildComma
 			carg = append(carg, ca)
 		}
 		srcExt := filepath.Ext(srcPath)
-		if rule, exists := otherRuleList[srcExt]; exists {
+		if rule, exists := (*otherDict)[srcExt]; exists {
+			// Custom rules
 			if compiler, ok := info.variables[rule.Compiler]; ok {
 				compiler, err := info.Interpolate(compiler)
 				if err != nil {
@@ -989,67 +993,68 @@ func Exists(filename string) bool {
 	return err == nil
 }
 
-//
-// other rule
-//
-func createOtherRule(info BuildInfo, olist []Other, optionPrefix string) error {
-	for _, ot := range olist {
+// Registers custom rules.
+func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Other) error {
+	optPrefix := info.OptionPrefix()
+	for _, ot := range others {
 		if ot.Type != "" && ot.Type != option.targetType {
 			continue
 		}
 
 		ext := ot.Ext
 
-		olist := []string{}
+		optlist := []string{}
 		for _, o := range getList(ot.Option, info.target) {
-			var e error
-			olist, e = appendOption(info, olist, o, optionPrefix)
-			if e != nil {
-				return e
+			var err error
+			optlist, err = appendOption(info, optlist, o, optPrefix)
+			if err != nil {
+				return errors.Wrapf(err, "failed to construct option list for custom rules")
 			}
 		}
 
 		needInclude := false
 		needOption := false
 		needDefine := false
-		rule, ok := otherRuleList[ext]
+		rule, ok := (*dict)[ext]
 		if ok {
-			rule.Options = append(rule.Options, olist...)
+			rule.Options = append(rule.Options, optlist...)
 		} else {
 			// no exist rule
 			cmdl := strings.Split(ot.Command, " ")
-			compiler := ""
+			if len(cmdl) == 0 {
+				return errors.Errorf("no commands to \"%s\"", ext)
+			}
+			compiler := cmdl[0]
 
-			cmdline := "$compiler"
-			for i, c := range cmdl {
-				if i == 0 {
-					compiler = c
-				} else if c[0] == '@' {
-					switch c {
-					case "@include":
-						needInclude = true
-					case "@option":
-						needOption = true
-					case "@define":
-						needDefine = true
-					}
-					cmdline += " $" + c[1:]
-				} else {
-					cmdline += " " + c
+			commands := cmdl[:0] // [Filter w/o allocating](https://github.com/golang/go/wiki/SliceTricks#filtering-without-allocating)
+			commands = append(commands, "$compiler")
+			for _, c := range cmdl[1:] {
+				switch c {
+				case "@include":
+					needInclude = true
+					commands = append(commands, "$include")
+				case "@option":
+					needOption = true
+					commands = append(commands, "$option")
+				case "@define":
+					needDefine = true
+					commands = append(commands, "$define")
+				default:
+					commands = append(commands, c)
 				}
 			}
 
 			rule = OtherRule{
 				Compiler:    compiler,
-				Command:     cmdline,
+				Command:     strings.Join(commands, " "),
 				Title:       ot.Description,
-				Options:     olist,
+				Options:     optlist,
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
 				NeedDepend:  ot.NeedDepend}
 		}
-		otherRuleList[ext] = rule
+		(*dict)[ext] = rule
 	}
 	return nil
 }
