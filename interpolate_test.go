@@ -101,13 +101,14 @@ func TestInterpolateError(t *testing.T) {
 			})
 		})
 		Convey("WHEN: Interpolate \"${rec}\" (Exceeding recursion limit)", func() {
-			_, err := Interpolate("${rec}", dict)
+			actual, err := Interpolate("${rec}", dict)
 			Convey("THEN: Should cause error", func() {
 				So(err, ShouldNotBeNil)
 				Convey("AND THEN: Should have ExceedRecursionLimit error type", func() {
 					e, ok := err.(*InterpolationError)
 					So(ok, ShouldBeTrue)
 					So(e.Type, ShouldEqual, ExceedRecursionLimit)
+					Printf("actual: \"%s\"", actual)
 				})
 			})
 		})
@@ -127,13 +128,14 @@ func TestStrictInterpolateErrors(t *testing.T) {
 			{"${mokeke}moke", UnknownReference},
 			{"${rec}", ExceedRecursionLimit}} {
 			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", tc.input), func() {
-				_, err := StrictInterpolate(tc.input, dict)
+				actual, err := StrictInterpolate(tc.input, dict)
 				Convey("THEN: Should cause an error", func() {
 					So(err, ShouldNotBeNil)
 					Convey(fmt.Sprintf("AND THEN: Should have %s error type", tc.err.String()), func() {
 						e, ok := err.(*InterpolationError)
 						So(ok, ShouldBeTrue)
 						So(e.Type, ShouldEqual, tc.err)
+						Printf("actual:\"%s\"\n", actual)
 					})
 				})
 			})

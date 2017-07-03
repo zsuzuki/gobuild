@@ -17,7 +17,7 @@ import (
  *   ;
  */
 
-const recursionLimit = 100
+const recursionLimit = 500
 
 // ErrorType means type of the error.
 type ErrorType int
@@ -62,55 +62,73 @@ func (e InterpolationError) Error() string {
 // Interpolate interpolates supplied `s` using `dict`.
 // If `s` contains unknown reference, treat it as an empty string ("").
 func Interpolate(s string, dict map[string]string) (string, error) {
-	return interpolate("", s, dict, 0, false)
+	return interpolate(dict, false, s)
 }
 
 // StrictInterpolate interpolates supplied `s` using `dict`.
 // If `s` contains unknown reference, treat it as an error.
 func StrictInterpolate(s string, dict map[string]string) (string, error) {
-	return interpolate("", s, dict, 0, true)
+	return interpolate(dict, true, s)
 }
 
-func interpolate(accum string, rest string, dict map[string]string, limit int, strict bool) (string, error) {
-	if recursionLimit <= limit {
-		return "", newError(ExceedRecursionLimit, rest)
-	}
-	if idx := strings.Index(rest, "$"); 0 <= idx {
-		// `$` found
-		accum += rest[:idx]
-		r := rest[idx+1:]
-		if len(r) == 0 {
-			// "...$"
-			return accum + "$", nil
+func interpolate(dict map[string]string, strict bool, rest string) (string, error) {
+	depth := 0
+	result := ""
+restart:
+	for {
+		if recursionLimit <= depth {
+			return result, newError(ExceedRecursionLimit, rest)
 		}
-		// 0 < len (r)
-		ch, sz := utf8.DecodeRuneInString(r)
-		switch ch {
-		case '{':
-			if keyIdx := strings.Index(r[sz:], "}"); 0 <= keyIdx {
-				k := r[sz : sz+keyIdx]
-				v, ok := dict[k]
-				if strict {
-					if !ok {
-						return accum, newError(UnknownReference, rest)
+		if idx := strings.Index(rest, "$"); 0 <= idx {
+			// `$` found
+			result += rest[:idx]
+			r := rest[idx+1:]
+			if len(r) == 0 {
+				// "...$"
+				return result + "$", nil
+			}
+			// 0 < len (r)
+			ch, sz := utf8.DecodeRuneInString(r)
+			switch ch {
+			case '{':
+				if keyIdx := strings.Index(r[sz:], "}"); 0 <= keyIdx {
+					k := r[sz : sz+keyIdx]
+					v, ok := dict[k]
+					if strict {
+						if !ok {
+							return result, newError(UnknownReference, rest)
+						}
 					}
+					if ix := strings.Index(v, "${"); 0 <= ix {
+						depth += 1
+						result += v[:ix]
+						rest = v[ix:] + r[sz+keyIdx+1:]
+					} else {
+						result += v
+						rest = r[sz+keyIdx+1:]
+					}
+					goto restart
 				}
-				return interpolate(accum, v+r[sz+keyIdx+1:], dict, limit+1, strict)
+				return result, &InterpolationError{Type: UnmatchedBrace, Arg: rest}
+			case '$':
+				result += "$"
+				rest = r[sz:]
+				goto restart
+			default:
+				if strict {
+					// Invalid $... sequence
+					return result, newError(InvalidDollarSequence, rest)
+				}
+				// Treat it as is...
+				result += "$"
+				rest = r
+				goto restart
 			}
-			return accum, &InterpolationError{Type: UnmatchedBrace, Arg: rest}
-		case '$':
-			return interpolate(accum+"$", r[sz:], dict, limit+1, strict)
-		default:
-			if strict {
-				// Invalid $... sequence
-				return accum, newError(InvalidDollarSequence, rest)
-			}
-			// Treat it as is...
-			return interpolate(accum+"$", r, dict, limit+1, false)
+		} else {
+			// No `$` in `s`
+			result += rest
+			return result, nil
 		}
-	} else {
-		// No `$` in `s`
-		return accum + rest, nil
 	}
 }
 
