@@ -47,7 +47,7 @@ var (
 	subNinjaList      []string
 	appendRules       map[string]AppendBuild
 	otherRuleList     map[string]OtherRule
-	commandList       []BuildCommand
+	commandList       []*BuildCommand
 	otherRuleFileList []OtherRuleFile
 
 	// ScannedConfigs remembers all scanned configuration files.
@@ -128,7 +128,7 @@ func main() {
 	}
 
 	appendRules = map[string]AppendBuild{}
-	commandList = []BuildCommand{}
+	commandList = []*BuildCommand{}
 	otherRuleList = map[string]OtherRule{}
 	otherRuleFileList = []OtherRuleFile{}
 	subNinjaList = []string{}
@@ -361,16 +361,17 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 
 	// pre build files
-	if err = createPrebuild(info, relChildDir, d.Prebuild); err != nil {
-		return nil, err
-	}
-
-	// create compile list
-	artifacts, err := compileFiles(info, relChildDir, files)
+	cmds, err := makePreBuildCommands(info, relChildDir, d.Prebuild)
 	if err != nil {
 		return nil, err
 	}
-
+	commandList = append(commandList, cmds...)
+	// create compile list
+	cmds, artifacts, err := compileFiles(info, relChildDir, files)
+	if err != nil {
+		return nil, err
+	}
+	commandList = append(commandList, cmds...)
 	var result []string
 
 	switch currentTarget.Type {
@@ -379,11 +380,12 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 		if 0 < len(artifacts) {
 			// MEMO: Constructs relation
 			//   <lib> 1--0..* <artifacts>
-			libName, err := createArchive(info, artifacts, currentTarget.Name)
+			libCmd, err := makeArchiveCommand(info, artifacts, currentTarget.Name)
 			if err != nil {
 				return nil, err
 			}
-			result = append(subArtifacts, libName)
+			commandList = append(commandList, libCmd)
+			result = append(subArtifacts, libCmd.OutFile)
 		} else {
 			Warn("There are no files to build in \"%s\".", relChildDir)
 		}
@@ -394,7 +396,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 			//   <exe> 1--1..* <artifacts>
 			//     1\
 			//       +-- 1..* <artifacts from sub-directories>
-			err = createLink(
+			cmds, err := makeLinkCommand(
 				info,
 				append(artifacts, subArtifacts...),
 				currentTarget.Name,
@@ -402,6 +404,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 			if err != nil {
 				return nil, err
 			}
+			commandList = append(commandList, cmds...)
 		} else {
 			Warn("There are no files to build in \"%s\".", relChildDir)
 		}
@@ -411,7 +414,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 			if e != nil {
 				return nil, e
 			}
-			commandList = append (commandList, *cmd)
+			commandList = append(commandList, cmd)
 		} else {
 			Warn("There are no files to convert in \"%s\".", relChildDir)
 		}
@@ -420,9 +423,11 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 		result = append(subArtifacts, artifacts...)
 	case "test":
 		// unit tests
-		if e := createTest(info, testfiles, relChildDir); e != nil {
-			return nil, e
+		cmds, err := createTest(info, testfiles, relChildDir)
+		if err != nil {
+			return nil, err
 		}
+		commandList = append(commandList, cmds...)
 	default:
 		/* NO-OP */
 	}
@@ -483,10 +488,10 @@ func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
 //
 // archive objects
 //
-func createArchive(info BuildInfo, inputs []string, targetName string) (string, error) {
+func makeArchiveCommand(info BuildInfo, inputs []string, targetName string) (*BuildCommand, error) {
 	arCommand, e := info.ExpandVariable("archiver")
 	if e != nil {
-		return "", e
+		return nil, e
 	}
 
 	cmd := BuildCommand{
@@ -503,20 +508,20 @@ func createArchive(info BuildInfo, inputs []string, targetName string) (string, 
 			}
 		})(),
 		NeedCommandAlias: true}
-	commandList = append(commandList, cmd) // Record command
 
-	return cmd.OutFile, nil
+	return &cmd, nil
 }
 
 //
 // link objects
 //
-func createLink(info BuildInfo, createList []string, targetName string, packager Packager) error {
+func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string, packager Packager) ([]*BuildCommand, error) {
+	result := make([]*BuildCommand, 0, 1)
 	targetPath := JoinPathes(info.MakeExecutablePath(targetName))
 
-	linker, e := info.ExpandVariable("linker")
-	if e != nil {
-		return e
+	linker, err := info.ExpandVariable("linker")
+	if err != nil {
+		return result, err
 	}
 
 	options := []string{}
@@ -531,23 +536,23 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 		Command:          linker,
 		CommandType:      "link",
 		Args:             options,
-		InFiles:          createList,
+		InFiles:          sourceArtifacts,
 		OutFile:          targetPath,
 		Depends:          info.linkDepends,
 		NeedCommandAlias: true}
-	commandList = append(commandList, cmd)
+	result = append(result, &cmd)
 	//fmt.Println("-o " + NowTarget.Name + flist)
 
 	if 0 < len(packager.Target) {
 		// package
 		pkgname := JoinPathes(option.outputDir, targetName, packager.Target)
-		pkgr, e := info.ExpandVariable("packager")
-		if e != nil {
-			return e
+		pkgr, err := info.ExpandVariable("packager")
+		if err != nil {
+			return result, err
 		}
-		pargs, e := stringToReplacedList(info, packager.Option)
-		if e != nil {
-			return e
+		pargs, err := stringToReplacedList(info, packager.Option)
+		if err != nil {
+			return result, err
 		}
 		pkg := BuildCommand{
 			Command:          pkgr,
@@ -556,9 +561,9 @@ func createLink(info BuildInfo, createList []string, targetName string, packager
 			InFiles:          []string{targetPath},
 			OutFile:          pkgname,
 			NeedCommandAlias: true}
-		commandList = append(commandList, pkg) // Record commands
+		result = append(result, &pkg)
 	}
-	return nil
+	return result, err
 }
 
 //
@@ -583,15 +588,15 @@ func makeConvertCommand(info BuildInfo, loaddir string, createList []string, tar
 		InFiles:          clist,
 		OutFile:          cvname,
 		NeedCommandAlias: true}
-	commandList = append(commandList, cmd) // Record commands
 	return &cmd, nil
 }
 
 //
 // unit tests
 //
-func createTest(info BuildInfo, createList []string, loaddir string) error {
+func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildCommand, error) {
 	carg := append(info.includes, info.defines...)
+	result := make([]*BuildCommand, 0, len(inputs))
 	for _, ca := range info.options {
 		switch ca {
 		case "$out":
@@ -606,19 +611,22 @@ func createTest(info BuildInfo, createList []string, loaddir string) error {
 	//objdir := filepath.Join(info.outputdir, buildDirectory) + "/"
 	//objdir := info.outputdir
 
-	for _, f := range createList {
+	for _, f := range inputs {
 		// first, compile a test driver
-		createList, _ = compileFiles(info, loaddir, []string{f})
-
+		objcmds, artifacts, err := compileFiles(info, loaddir, []string{f})
+		result = append(result, objcmds...)
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
-		trname := strings.TrimSuffix(f, filepath.Ext(f))
-
-		if esuf, ok := info.variables["execute_suffix"]; ok {
-			trname += esuf
+		cmds, err := makeLinkCommand(
+			info,
+			artifacts,
+			info.MakeExecutablePath(strings.TrimSuffix(f, filepath.Ext(f))),
+			Packager{})
+		if err != nil {
+			return result, errors.Wrapf(err, "failed to construct a command for testing")
 		}
-		createLink(info, createList, JoinPathes(trname), Packager{})
+		result = append(result, cmds...)
 	}
-	return nil
+	return result, nil
 }
 
 //
@@ -688,10 +696,9 @@ func FixupCommandPath(command string, commandDir string) (commandLine string, co
 	return
 }
 
-//
-// compile files
-//
-func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
+// makePreBuildCommands constructs a command list for preparing later builds.
+func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([]*BuildCommand, error) {
+	result := make([]*BuildCommand, 0)
 	for _, build := range buildItems {
 		if !build.Match(info.target, option.targetType) {
 			continue
@@ -700,7 +707,7 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 		// register prebuild
 		sources := getList(build.Source, info.target)
 		if len(sources) == 0 {
-			return errors.Errorf("no sources for command `%s`", build.Name)
+			return result, errors.Errorf("no sources for command `%s`", build.Name)
 		}
 		{
 			// Fixes source elements
@@ -713,7 +720,7 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 				} else {
 					expanded, err := info.Interpolate(src)
 					if err != nil {
-						return err
+						return result, err
 					}
 					sources[i] = JoinPathes(loaddir, expanded)
 				}
@@ -721,11 +728,11 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 		}
 		buildCommand, ok := info.variables[build.Command]
 		if !ok {
-			return errors.Errorf("missing build command \"%s\" (referenced from \"%s\")", build.Command, build.Name)
+			return result, errors.Errorf("missing build command \"%s\" (referenced from \"%s\")", build.Command, build.Name)
 		}
 		buildCommand, err := info.Interpolate(strings.Replace(buildCommand, "${selfdir}", loaddir, -1))
 		if err != nil {
-			return err
+			return result, err
 		}
 		commandLabel := strings.Replace(JoinPathes(info.outputdir, build.Command), "/", "_", -1)
 		deps := []string{}
@@ -737,7 +744,7 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 				r, d := FixupCommandPath(buildCommand[1:], info.outputdir)
 				abs, err := filepath.Abs(d)
 				if err != nil {
-					return errors.Wrapf(err, "failed to obtain the absolute path for \"%s\"", d)
+					return result, errors.Wrapf(err, "failed to obtain the absolute path for \"%s\"", d)
 				}
 				d = filepath.ToSlash(abs)
 				deps = append(deps, d)
@@ -773,7 +780,8 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 				InFiles:          sources,
 				OutFile:          outfile,
 				NeedCommandAlias: false}
-			commandList = append(commandList, cmd)
+			//commandList = append(commandList, &cmd)
+			result = append(result, &cmd)
 		} else {
 			// Found `$...`
 			ext := build.Name[1:] //filepath.Ext(build.Name)
@@ -794,24 +802,32 @@ func createPrebuild(info BuildInfo, loaddir string, buildItems []Build) error {
 					InFiles:          []string{src},
 					OutFile:          outfile,
 					NeedCommandAlias: false}
-				commandList = append(commandList, cmd)
+				//commandList = append(commandList, &cmd)
+				result = append(result, &cmd)
 			}
 		}
 	}
-	return nil
+	return result, nil
 }
 
 // Build command for compiling C, C++...
-func compileFiles(info BuildInfo, loaddir string, files []string) (createList []string, e error) {
+func compileFiles(info BuildInfo, loaddir string, files []string) ([]*BuildCommand, []string, error) {
+	artifactPathes := make([]string, 0, len(files))
+	result := make([]*BuildCommand, 0, len(files))
 	if len(files) == 0 {
-		return // Nothing to do
+		return result, artifactPathes, nil
 	}
-	compiler, e := info.ExpandVariable("compiler")
-	if e != nil {
-		return []string{}, e
+	compiler, err := info.ExpandVariable("compiler")
+	if err != nil {
+		return result, artifactPathes, errors.Wrapf(err, "missing ${compiler} definitions")
 	}
-
-	pchFile := createPCH(info, loaddir, compiler)
+	pchCmd, err := createPCH(info, loaddir, compiler)
+	if err != nil {
+		return result, artifactPathes, err
+	}
+	if pchCmd != nil {
+		result = append(result, pchCmd)
+	}
 
 	arg1 := append(info.includes, info.defines...)
 
@@ -839,7 +855,8 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 		srcName := escapeDriveColon(JoinPathes(srcPath))
 		objName := JoinPathes(objdir, dstPathBase+".o")
 		depName := JoinPathes(objdir, dstPathBase+".d")
-		createList = append(createList, objName)
+
+		artifactPathes = append(artifactPathes, objName)
 
 		carg := make([]string, 0, len(arg1)+len(info.options))
 		carg = append(carg, arg1...)
@@ -861,9 +878,10 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 			if compiler, ok := info.variables[rule.Compiler]; ok {
 				compiler, err := info.Interpolate(compiler)
 				if err != nil {
-					return []string{}, err
+					return result,
+						artifactPathes,
+						errors.Wrapf(err, "failed to obtain the compiler definition from \"%s\"", rule.Compiler)
 				}
-
 				ocmd := OtherRuleFile{
 					Rule:     "compile" + srcExt,
 					Compiler: compiler,
@@ -916,23 +934,23 @@ func compileFiles(info BuildInfo, loaddir string, files []string) (createList []
 				OutFile:          objName,
 				DepFile:          depName,
 				NeedCommandAlias: true}
-			if 0 < len(pchFile) {
-				cmd.ImplicitDepends = append(cmd.ImplicitDepends, pchFile)
-				cmd.Args = append(cmd.Args, "-include-pch", pchFile)
+			if pchCmd != nil {
+				cmd.ImplicitDepends = append(cmd.ImplicitDepends, pchCmd.OutFile)
+				cmd.Args = append(cmd.Args, "-include-pch", pchCmd.OutFile)
 			}
-			commandList = append(commandList, cmd) // Record it
+			result = append(result, &cmd)
 		}
 	}
-	return createList, nil
+	return result, artifactPathes, nil
 }
 
 // Create pre-compiled header if possible.
-func createPCH(info BuildInfo, srcdir string, compiler string) string {
+func createPCH(info BuildInfo, srcdir string, compiler string) (*BuildCommand, error) {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := JoinPathes(srcdir, pchName)
 	if !Exists(pchSrc) {
 		Verbose("%s: \"%s\" is not detected.\n", ProgramName, pchSrc)
-		return ""
+		return nil, nil
 	}
 	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
 	pchDst := JoinPathes(info.outputdir, srcdir, buildDirectory, pchName+".pch")
@@ -962,8 +980,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) string {
 		OutFile:          pchDst,
 		DepFile:          pchDst + ".dep",
 		NeedCommandAlias: true}
-	commandList = append(commandList, cmd)
-	return pchDst
+	return &cmd, nil
 }
 
 // Exists checks `filename` existence.
@@ -1066,7 +1083,7 @@ func outputNinja() error {
 
 	// Emits rules for updating `build.ninja`
 	type WriteContext struct {
-		Commands      []BuildCommand
+		Commands      []*BuildCommand
 		OtherRules    []OtherRuleFile
 		SubNinjas     []string
 		NinjaFile     string
