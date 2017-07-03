@@ -7,12 +7,24 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
+type testCase struct {
+	input    string
+	expected string
+}
+
 func TestInterpolateLiteral(t *testing.T) {
 	Convey("GIVEN: A test dictionary", t, func() {
 		dict := newDictionary()
 		for _, v := range []string{"", "literal", "foobarbaz$"} {
 			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", v), func() {
 				actual, err := Interpolate(v, dict)
+				Convey(fmt.Sprintf("THEN: Should be \"%s\"", v), func() {
+					So(err, ShouldBeNil)
+					So(actual, ShouldEqual, v)
+				})
+			})
+			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\" (strict mode)", v), func() {
+				actual, err := StrictInterpolate(v, dict)
 				Convey(fmt.Sprintf("THEN: Should be \"%s\"", v), func() {
 					So(err, ShouldBeNil)
 					So(actual, ShouldEqual, v)
@@ -25,17 +37,11 @@ func TestInterpolateLiteral(t *testing.T) {
 func TestInterpolateExpansion(t *testing.T) {
 	Convey("GIVEN: A Test dictionary", t, func() {
 		dict := newDictionary()
-		type testCase struct {
-			input    string
-			expected string
-		}
 		Convey("AND GIVEN: Test cases", func() {
-			cases := []testCase{
+			for _, v := range []testCase{
 				{input: "${foo}", expected: "foo-value"},
 				{input: "${baz}", expected: "baz-value, bar-value, foo-value"},
-				{input: "${foo}$$${bar}", expected: "foo-value$bar-value, foo-value"},
-				{input: "${mokeke}moke", expected: "moke"}}
-			for _, v := range cases {
+				{input: "${foo}$$${bar}", expected: "foo-value$bar-value, foo-value"}} {
 				Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", v.input), func() {
 					actual, err := Interpolate(v.input, dict)
 					Convey(fmt.Sprintf("THEN: Should be \"%s\"", v.expected), func() {
@@ -43,98 +49,95 @@ func TestInterpolateExpansion(t *testing.T) {
 						So(actual, ShouldEqual, v.expected)
 					})
 				})
+				Convey(fmt.Sprintf("WHEN: Interpolating \"%s\" (strict mode)", v.input), func() {
+					actual, err := StrictInterpolate(v.input, dict)
+					Convey(fmt.Sprintf("THEN: Should be \"%s\"", v.expected), func() {
+						So(err, ShouldBeNil)
+						So(actual, ShouldEqual, v.expected)
+					})
+				})
 			}
+		})
+		Convey("WHEN Interpolating \"${mokeke}moke\"", func() {
+			actual, err := Interpolate("${mokeke}moke", dict)
+			Convey("THEN: Should be \"${mokeke}moke\"", func() {
+				So(err, ShouldBeNil)
+				So(actual, ShouldEqual, "moke")
+			})
+		})
+		Convey("WHEN Interpolating \"${mokeke}moke\" (strict-mode)", func() {
+			_, err := StrictInterpolate("${mokeke}moke", dict)
+			Convey("THEN: Should cause an error", func() {
+				So(err, ShouldNotBeNil)
+				Convey("AND THEN: Should be UnknownReference error", func() {
+					e, ok := err.(*InterpolationError)
+					So(ok, ShouldBeTrue)
+					So(e.Type, ShouldEqual, UnknownReference)
+				})
+			})
 		})
 	})
 }
 
 func TestInterpolateError(t *testing.T) {
-	dict := newDictionary()
-
-	Convey("Errors", t, func() {
-		Convey("Unmatched {}", func() {
+	Convey("GIVEN: A Test dictionary", t, func() {
+		dict := newDictionary()
+		Convey("WHEN: Interpolte \"${foo\" (Unmatched {})", func() {
 			_, err := Interpolate("${foo", dict)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "{foo")
+			Convey("THEN: Should cause error", func() {
+				So(err, ShouldNotBeNil)
+				Convey("AND THEN: Should have UnmatchedBrace error type", func() {
+					e, ok := err.(*InterpolationError)
+					So(ok, ShouldBeTrue)
+					So(e.Type, ShouldEqual, UnmatchedBrace)
+				})
+			})
 		})
-		Convey("Passthrough unrecognized", func() {
+		Convey("WHEN: Interpolate \"$foo\" (Passthrough unrecognized)", func() {
 			actual, err := Interpolate("$foo", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "$foo")
+			Convey("THEN: Should success", func() {
+				So(err, ShouldBeNil)
+				So(actual, ShouldEqual, "$foo")
+			})
 		})
-		Convey("Exceeding recursion limit", func() {
+		Convey("WHEN: Interpolate \"${rec}\" (Exceeding recursion limit)", func() {
 			_, err := Interpolate("${rec}", dict)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "recursion limit exceeded")
+			Convey("THEN: Should cause error", func() {
+				So(err, ShouldNotBeNil)
+				Convey("AND THEN: Should have ExceedRecursionLimit error type", func() {
+					e, ok := err.(*InterpolationError)
+					So(ok, ShouldBeTrue)
+					So(e.Type, ShouldEqual, ExceedRecursionLimit)
+				})
+			})
 		})
 	})
 }
 
-func TestStrictInterpolateLiteral(t *testing.T) {
-	dict := newDictionary()
-
-	Convey("Test with literals", t, func() {
-		Convey("\"\" should be \"\"", func() {
-			actual, err := StrictInterpolate("", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "")
-		})
-		Convey("\"literal\" should be \"literal\"", func() {
-			actual, err := StrictInterpolate("literal", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "literal")
-		})
-		Convey("\"foobarbaz$\" should be \"foobarbaz$\"", func() {
-			actual, err := StrictInterpolate("foobarbaz$", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "foobarbaz$")
-		})
-	})
-}
-
-func TestStrictInterpolateExpansion(t *testing.T) {
-	dict := newDictionary()
-	Convey("Test expansions", t, func() {
-		Convey("Single level expansion", func() {
-			actual, err := StrictInterpolate("${foo}", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "foo-value")
-		})
-		Convey("Nested expansion", func() {
-			actual, err := StrictInterpolate("${baz}", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "baz-value, bar-value, foo-value")
-		})
-		Convey("Double $$ in string", func() {
-			actual, err := StrictInterpolate("${foo}$$${bar}", dict)
-			So(err, ShouldBeNil)
-			So(actual, ShouldEqual, "foo-value$bar-value, foo-value")
-		})
-	})
-}
 func TestStrictInterpolateErrors(t *testing.T) {
-	dict := newDictionary()
-	Convey("Errors", t, func() {
-		Convey("Unmatched {}", func() {
-			_, err := StrictInterpolate("${foo", dict)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "{foo")
-		})
-		Convey("Unrecognized as error", func() {
-			_, err := StrictInterpolate("$foo", dict)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "invalid `$` sequence \"foo\" found.")
-		})
-		Convey("Non existants", func() {
-			_, err := StrictInterpolate("${mokeke}moke", dict)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "unknown reference ${mokeke} found.")
-		})
-		Convey("Exceeding recursion limit", func() {
-			_, err := StrictInterpolate("${rec}", dict)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "recursion limit exceeded")
-		})
+	Convey("GIVEN: A new dictionary", t, func() {
+		dict := newDictionary()
+		type errTestCase struct {
+			input string
+			err   ErrorType
+		}
+		for _, tc := range []errTestCase{
+			{"${foo", UnmatchedBrace},
+			{"$foo", InvalidDollarSequence},
+			{"${mokeke}moke", UnknownReference},
+			{"${rec}", ExceedRecursionLimit}} {
+			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", tc.input), func() {
+				_, err := StrictInterpolate(tc.input, dict)
+				Convey("THEN: Should cause an error", func() {
+					So(err, ShouldNotBeNil)
+					Convey(fmt.Sprintf("AND THEN: Should have %s error type", tc.err.String()), func() {
+						e, ok := err.(*InterpolationError)
+						So(ok, ShouldBeTrue)
+						So(e.Type, ShouldEqual, tc.err)
+					})
+				})
+			})
+		}
 	})
 }
 
