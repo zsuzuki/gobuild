@@ -100,7 +100,7 @@ restart:
 						}
 					}
 					if ix := strings.Index(v, "${"); 0 <= ix {
-						depth += 1
+						depth++
 						result += v[:ix]
 						rest = v[ix:] + r[sz+keyIdx+1:]
 					} else {

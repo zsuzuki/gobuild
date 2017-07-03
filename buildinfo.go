@@ -87,6 +87,7 @@ func (info *BuildInfo) ExpandVariable(s string) (string, error) {
 	return "", errors.Errorf("variable \"%s\" is not defined", s)
 }
 
+// MakeExecutablePath constructs path for the executables in platform dependent way.
 func (info *BuildInfo) MakeExecutablePath(s string) string {
 	if suffix, ok := info.variables["execute_suffix"]; ok {
 		return filepath.Join(info.outputdir, s+suffix)
