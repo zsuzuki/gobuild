@@ -9,49 +9,73 @@ import (
 )
 
 func TestUnmarshalStringList(t *testing.T) {
-	srcYAML := `
+	Convey(`GIVEN: A YAML source`, t, func() {
+		srcYAML := `# YAML Source
 type: PS4
 target: foo
 list:
 - list item
+- dummy
 debug:
 - debug item
+- dummy
 release:
 - release item
+- dummy
 develop:
 - develop item
+- dummy
 develop-release:
 - develop-release item
+- dummy
 product:
 - product item
+- dummy
 `
-	Convey(`Test UnmarshalStringList`, t, func() {
-		var slist StringList
-		err := yaml.Unmarshal([]byte(srcYAML), &slist)
-		So(err, ShouldBeNil)
-		Convey(`Test slots...`, func() {
-			Convey(`Test fixed slots.`, func() {
-				So(slist.Type, ShouldEqual, "PS4")
-				So(slist.Target, ShouldEqual, "foo")
-			})
-			for _, k := range KnownBuildTypes {
-				Convey(fmt.Sprintf(`Test "%s" slot.`, k.String()), func() {
-					Convey(`Passed as KnownBuildType`, func() {
-						l := slist.Items(k)
-						So(*l, ShouldNotBeEmpty)
-						So((*l)[0], ShouldEqual, fmt.Sprintf("%s item", k.String()))
-					})
-					Convey(`Passed as string`, func() {
-						key := k.String()
-						l := slist.Items(key)
-						So(*l, ShouldNotBeEmpty)
-						So((*l)[0], ShouldEqual, fmt.Sprintf("%s item", key))
+		Convey("WHEN: Unmarshal", func() {
+			var slist StringList
+			err := yaml.Unmarshal([]byte(srcYAML), &slist)
+			Convey("THEN: Should success", func() {
+				So(err, ShouldBeNil)
+				Convey("AND THEN: .Type should be \"PS4\"", func() {
+					So(slist.Type, ShouldEqual, "PS4")
+				})
+				Convey("AND THEN: .Target should be \"foo\"", func() {
+					So(slist.Target, ShouldEqual, "foo")
+				})
+				Convey(`AND WHEN: Call Items ("foo")`, func() {
+					l := slist.Items("foo")
+					Convey("THEN: Should return `nil`", func() {
+						So(l, ShouldBeNil)
 					})
 				})
-			}
-			Convey(`Unexisted key`, func() {
-				l := slist.Items("foo")
-				So(l, ShouldBeNil)
+				Convey("AND WHEN: Call `Item` with `KnownBuildType` key", func() {
+					for _, k := range KnownBuildTypes {
+						Convey(fmt.Sprintf(`AND WHEN: Call Item ("%s")`, k.String()), func() {
+							l := slist.Items(k)
+							Convey("AND THEN: Should not return nil", func() {
+								So(l, ShouldNotBeNil)
+								Convey(fmt.Sprintf("AND THEN: Should return [\"%s item\", \"dummy\"]", k.String()), func() {
+									So(*l, ShouldResemble, []string{fmt.Sprintf("%s item", k.String()), "dummy"})
+								})
+							})
+						})
+					}
+				})
+				Convey("AND WHEN: Call `Item` with `string` key", func() {
+					for _, k := range KnownBuildTypes {
+						Convey(fmt.Sprintf(`AND WHEN: Call Item ("%s")`, k.String()), func() {
+							key := k.String()
+							l := slist.Items(key)
+							Convey("AND THEN: Should not return nil", func() {
+								So(l, ShouldNotBeNil)
+								Convey(fmt.Sprintf("AND THEN: Should return [\"%s item\", \"dummy\"]", key), func() {
+									So(*l, ShouldResemble, []string{fmt.Sprintf("%s item", key), "dummy"})
+								})
+							})
+						})
+					}
+				})
 			})
 		})
 	})
