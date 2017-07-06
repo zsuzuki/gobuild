@@ -250,25 +250,25 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	if level == 0 {
 		switch option.variant {
 		case Product.String():
-			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Product")
+			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Product")
 		case Develop.String():
-			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Develop")
+			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Develop")
 		case DevelopRelease.String():
-			option.outputDir = JoinPathes(option.outputDir, option.targetType, "DevelopRelease")
+			option.outputDir = JoinPaths(option.outputDir, option.targetType, "DevelopRelease")
 		case Release.String():
-			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Release")
+			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Release")
 		default:
-			option.outputDir = JoinPathes(option.outputDir, option.targetType, "Debug")
+			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Debug")
 		}
 	}
 
-	info.outputdir = JoinPathes(option.outputDir, relChildDir) + "/" // Proofs '/' ending
+	info.outputdir = JoinPaths(option.outputDir, relChildDir) + "/" // Proofs '/' ending
 
 	// Constructs include path arguments.
 	for _, pth := range getList(d.Include, info.target) {
 		const prefix = "$output"
 		if strings.HasPrefix(pth, prefix) {
-			info.AddInclude(JoinPathes(info.outputdir, "output"+pth[len(prefix):]))
+			info.AddInclude(JoinPaths(info.outputdir, "output"+pth[len(prefix):]))
 		} else {
 			useRel := pth[0] == '$'
 			pth, err = info.StrictInterpolate(pth)
@@ -276,7 +276,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 				return nil, err
 			}
 			if !useRel && !filepath.IsAbs(pth) {
-				info.AddInclude(JoinPathes(relChildDir, pth))
+				info.AddInclude(JoinPaths(relChildDir, pth))
 			} else {
 				info.AddInclude(pth)
 			}
@@ -501,9 +501,9 @@ func makeArchiveCommand(info BuildInfo, inputs []string, targetName string) (*Bu
 		OutFile: (func() string {
 			switch option.targetType {
 			case "WIN32":
-				return JoinPathes(info.outputdir, targetName+".lib")
+				return JoinPaths(info.outputdir, targetName+".lib")
 			default:
-				return JoinPathes(info.outputdir, fmt.Sprintf("lib%s.a", targetName))
+				return JoinPaths(info.outputdir, fmt.Sprintf("lib%s.a", targetName))
 			}
 		})(),
 		NeedCommandAlias: true}
@@ -516,7 +516,7 @@ func makeArchiveCommand(info BuildInfo, inputs []string, targetName string) (*Bu
 //
 func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string, packager Packager) ([]*BuildCommand, error) {
 	result := make([]*BuildCommand, 0, 1)
-	targetPath := JoinPathes(info.MakeExecutablePath(targetName))
+	targetPath := JoinPaths(info.MakeExecutablePath(targetName))
 
 	linker, err := info.ExpandVariable("linker")
 	if err != nil {
@@ -544,7 +544,7 @@ func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string
 
 	if 0 < len(packager.Target) {
 		// package
-		pkgname := JoinPathes(option.outputDir, targetName, packager.Target)
+		pkgname := JoinPaths(option.outputDir, targetName, packager.Target)
 		pkgr, err := info.ExpandVariable("packager")
 		if err != nil {
 			return result, err
@@ -569,7 +569,7 @@ func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string
 // convert objects
 //
 func makeConvertCommand(info BuildInfo, loaddir string, createList []string, targetName string) (*BuildCommand, error) {
-	cvname := JoinPathes(info.outputdir, targetName)
+	cvname := JoinPaths(info.outputdir, targetName)
 	converter, ok := info.variables["converter"]
 	if !ok {
 		return nil, errors.Errorf("missing the `converter` definitions for \"%s\"", targetName)
@@ -577,7 +577,7 @@ func makeConvertCommand(info BuildInfo, loaddir string, createList []string, tar
 
 	clist := []string{}
 	for _, f := range createList {
-		clist = append(clist, JoinPathes(loaddir, f))
+		clist = append(clist, JoinPaths(loaddir, f))
 	}
 
 	cmd := BuildCommand{
@@ -689,7 +689,7 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 func FixupCommandPath(command string, commandDir string) (commandLine string, commandPath string) {
 	args := strings.Split(command, " ")
 	cmd := args[0]
-	commandPath = JoinPathes(commandDir, cmd)
+	commandPath = JoinPaths(commandDir, cmd)
 	args[0] = commandPath
 	commandLine = strings.Join(args, " ")
 	return
@@ -713,7 +713,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 			for i, src := range sources {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					sources[i] = escapeDriveColon(JoinPathes(sabs))
+					sources[i] = escapeDriveColon(JoinPaths(sabs))
 				} else if src == "always" {
 					sources[i] = "always |"
 				} else {
@@ -721,7 +721,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 					if err != nil {
 						return result, err
 					}
-					sources[i] = JoinPathes(loaddir, expanded)
+					sources[i] = JoinPaths(loaddir, expanded)
 				}
 			}
 		}
@@ -733,7 +733,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 		if err != nil {
 			return result, err
 		}
-		commandLabel := strings.Replace(JoinPathes(info.outputdir, build.Command), "/", "_", -1)
+		commandLabel := strings.Replace(JoinPaths(info.outputdir, build.Command), "/", "_", -1)
 		deps := []string{}
 
 		if _, ok = appendRules[commandLabel]; !ok {
@@ -771,7 +771,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				pn = strings.Replace(pn, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			}
 			outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-			outfile = escapeDriveColon(JoinPathes(outfile))
+			outfile = escapeDriveColon(JoinPaths(outfile))
 			cmd := BuildCommand{
 				Command:          build.Command,
 				CommandType:      commandLabel,
@@ -793,7 +793,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 					dst += ext
 				}
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
-				outfile = escapeDriveColon(JoinPathes(outfile))
+				outfile = escapeDriveColon(JoinPaths(outfile))
 				cmd := BuildCommand{
 					Command:          build.Command,
 					CommandType:      commandLabel,
@@ -815,18 +815,18 @@ func makeCompileCommands(
 	otherDict *map[string]OtherRule,
 	loaddir string, files []string) ([]*BuildCommand, []string, error) {
 
-	artifactPathes := make([]string, 0, len(files))
+	artifactPaths := make([]string, 0, len(files))
 	result := make([]*BuildCommand, 0, len(files))
 	if len(files) == 0 {
-		return result, artifactPathes, nil
+		return result, artifactPaths, nil
 	}
 	compiler, err := info.ExpandVariable("compiler")
 	if err != nil {
-		return result, artifactPathes, errors.Wrapf(err, "missing ${compiler} definitions")
+		return result, artifactPaths, errors.Wrapf(err, "missing ${compiler} definitions")
 	}
 	pchCmd, err := createPCH(info, loaddir, compiler)
 	if err != nil {
-		return result, artifactPathes, err
+		return result, artifactPaths, err
 	}
 	if pchCmd != nil {
 		result = append(result, pchCmd)
@@ -838,7 +838,7 @@ func makeCompileCommands(
 		dstPathBase := srcPath // `dstPathBase` contains the basename of the `srcPath`.
 		var objdir string
 		if srcPath[0] == '$' {
-			// Auto generated pathes.
+			// Auto generated paths.
 			if strings.HasPrefix(srcPath, "$target/") {
 				dstPathBase = strings.Replace(dstPathBase, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			} else {
@@ -846,20 +846,20 @@ func makeCompileCommands(
 			}
 			srcPath = filepath.Join(info.outputdir, dstPathBase)
 			dstPathBase = filepath.Base(dstPathBase)
-			objdir = JoinPathes(filepath.Dir(srcPath), buildDirectory)
+			objdir = JoinPaths(filepath.Dir(srcPath), buildDirectory)
 		} else {
 			// At this point, `srcPath` is a relative path rooted from `loaddir`
 			tf := filepath.Join(loaddir, srcPath)
-			objdir = JoinPathes(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
+			objdir = JoinPaths(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
 			dstPathBase = filepath.Base(tf)
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		srcName := escapeDriveColon(JoinPathes(srcPath))
-		objName := JoinPathes(objdir, dstPathBase+".o")
-		depName := JoinPathes(objdir, dstPathBase+".d")
+		srcName := escapeDriveColon(JoinPaths(srcPath))
+		objName := JoinPaths(objdir, dstPathBase+".o")
+		depName := JoinPaths(objdir, dstPathBase+".d")
 
-		artifactPathes = append(artifactPathes, objName)
+		artifactPaths = append(artifactPaths, objName)
 
 		carg := make([]string, 0, len(arg1)+len(info.options))
 		carg = append(carg, arg1...)
@@ -883,7 +883,7 @@ func makeCompileCommands(
 				compiler, err := info.Interpolate(compiler)
 				if err != nil {
 					return result,
-						artifactPathes,
+						artifactPaths,
 						errors.Wrapf(err, "failed to obtain the compiler definition from \"%s\"", rule.Compiler)
 				}
 				ocmd := OtherRuleFile{
@@ -926,7 +926,7 @@ func makeCompileCommands(
 			} else {
 				Warn("compiler: Missing a compiler \"%s\" definitions in \"%s\".",
 					rule.Compiler,
-					JoinPathes(info.mydir, "make.yml"))
+					JoinPaths(info.mydir, "make.yml"))
 			}
 		} else {
 			// normal
@@ -945,19 +945,19 @@ func makeCompileCommands(
 			result = append(result, &cmd)
 		}
 	}
-	return result, artifactPathes, nil
+	return result, artifactPaths, nil
 }
 
 // Create pre-compiled header if possible.
 func createPCH(info BuildInfo, srcdir string, compiler string) (*BuildCommand, error) {
 	const pchName = "00-common-prefix.hpp"
-	pchSrc := JoinPathes(srcdir, pchName)
+	pchSrc := JoinPaths(srcdir, pchName)
 	if !Exists(pchSrc) {
 		Verbose("%s: \"%s\" is not detected.\n", ProgramName, pchSrc)
 		return nil, nil
 	}
 	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
-	pchDst := JoinPathes(info.outputdir, srcdir, buildDirectory, pchName+".pch")
+	pchDst := JoinPaths(info.outputdir, srcdir, buildDirectory, pchName+".pch")
 	Verbose("%s: Create PCH \"%s\"\n", ProgramName, pchDst)
 	args := append(info.includes, info.defines...)
 	for _, opt := range info.options {
@@ -1307,9 +1307,9 @@ func outputMSBuild(outdir, projname string) error {
 	return nil
 }
 
-// JoinPathes joins suppiled path components and normalize the result.
-func JoinPathes(pathes ...string) string {
-	return filepath.ToSlash(filepath.Clean(filepath.Join(pathes...)))
+// JoinPaths joins suppiled path components and normalize the result.
+func JoinPaths(paths ...string) string {
+	return filepath.ToSlash(filepath.Clean(filepath.Join(paths...)))
 }
 
 // Escapes ':' in path.
