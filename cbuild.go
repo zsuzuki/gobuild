@@ -1220,8 +1220,8 @@ rule ar
     command = $ar $options $out $in
 {{- end}}
 rule link
-{{- if .UseResponse}}
     description = Linking: $desc
+{{- if .UseResponse}}
     {{- if eq .Platform "WIN32"}}
     command = $link $options /out:$out @$out.rsp
     {{- else}}
@@ -1233,7 +1233,7 @@ rule link
     {{- if .GroupArchives}}
     command = $link $options -o $out -Wl,--start-group $in -Wl,--end-group
     {{- else}}
-    command = $link $options -o $out $in
+    command = $link -o $out $in $options
     {{- end}}
 {{- end}}
 rule packager
