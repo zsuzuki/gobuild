@@ -45,8 +45,8 @@ var (
 	responseNewline bool
 
 	subNinjaList      []string
-	appendRules       map[string]AppendBuild
-	otherRuleList     map[string]OtherRule
+	appendRules       = make(map[string]AppendBuild)
+	otherRuleList     = make(map[string]OtherRule)
 	commandList       []*BuildCommand
 	otherRuleFileList []OtherRuleFile
 
@@ -54,7 +54,7 @@ var (
 	ScannedConfigs []string
 
 	// ProgramName holds invoked program name.
-	ProgramName = getExeName()
+	ProgramName = getExecutableName("cbuild")
 
 	rxTruthy = regexp.MustCompile(`^\s*(?i:t(?:rue)?|y(?:es)?|on|1)(?:\s+.*)?$`)
 	rxFalsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)|no?|off|0)(?:\s+.*)?$`)
@@ -62,12 +62,6 @@ var (
 
 // The entry point.
 func main() {
-
-	//ProgramName := getExeName()
-
-	genMSBuild := false
-	projdir := ""
-	projname := ""
 	var (
 		isDebug          bool
 		isRelease        bool
@@ -75,7 +69,6 @@ func main() {
 		isDevelop        bool
 		isDevelopRelease bool
 	)
-
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [<target>]\n", ProgramName)
 		flag.PrintDefaults()
@@ -91,9 +84,9 @@ func main() {
 	flag.StringVar(&option.targetName, "t", "", "build target name")
 	flag.StringVar(&option.outputDir, "o", "build", "build directory")
 	flag.StringVar(&option.ninjaFile, "f", "build.ninja", "output build.ninja filename")
-	flag.BoolVar(&genMSBuild, "msbuild", false, "Export MSBuild project")
-	flag.StringVar(&projdir, "msbuild-dir", "./", "MSBuild project output directory")
-	flag.StringVar(&projname, "msbuild-proj", "out", "MSBuild project name")
+	genMSBuild := flag.Bool("msbuild", false, "Export MSBuild project")
+	projdir := flag.String("msbuild-dir", "./", "MSBuild project output directory")
+	projname := flag.String("msbuild-proj", "out", "MSBuild project name")
 	showVersionAndExit := flag.Bool("version", false, "display version")
 	flag.Parse()
 
@@ -118,62 +111,58 @@ func main() {
 	if isDevelop {
 		option.variant = Develop.String()
 	}
-
-	useResponse = false
-	groupArchives = false
-	responseNewline = false
-
-	if 0 < flag.NArg() && option.targetName == "" {
-		option.targetName = flag.Arg(0)
-	}
-
-	appendRules = map[string]AppendBuild{}
-	commandList = []*BuildCommand{}
-	otherRuleList = map[string]OtherRule{}
-	otherRuleFileList = []OtherRuleFile{}
-	subNinjaList = []string{}
-
-	if option.targetName != "" {
-		Verbose("%s: Target is \"%s\"\n", ProgramName, option.targetName)
-	}
-	buildinfo := BuildInfo{
-		variables:      map[string]string{"option_prefix": "-"},
-		includes:       []string{},
-		defines:        []string{},
-		options:        []string{},
-		archiveOptions: []string{},
-		convertOptions: []string{},
-		linkOptions:    []string{},
-		selectTarget:   option.targetName,
-		target:         option.targetName}
-
-	if _, err := CollectConfigurations(buildinfo, ""); err != nil {
+	err := cbuild(*projdir, *projname, *genMSBuild)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s:error: %v\n", ProgramName, err)
 		os.Exit(1)
 	}
-	if nlen := len(commandList) + len(otherRuleFileList); nlen <= 0 {
+	os.Exit(0)
+}
+
+func cbuild(projdir string, projname string, genMSBuild bool) error {
+	useResponse = false
+	groupArchives = false
+	responseNewline = false
+	if 0 < flag.NArg() && option.targetName == "" {
+		option.targetName = flag.Arg(0)
+	}
+	if option.targetName != "" {
+		Verbose("%s: Target is \"%s\"\n", ProgramName, option.targetName)
+	}
+	initialDictionary := importEnvironmentVariables()
+	const optPrefixSym = "option_prefix"
+	if _, ok := initialDictionary[optPrefixSym]; !ok {
+		initialDictionary[optPrefixSym] = "-"
+	}
+	buildinfo := BuildInfo{
+		variables:      initialDictionary,
+		selectedTarget: option.targetName,
+		target:         option.targetName,
+	}
+	if _, err := CollectConfigurations(buildinfo, ""); err != nil {
+		return err
+	}
+	if (len(commandList) + len(otherRuleFileList)) <= 0 {
 		fmt.Fprintf(os.Stderr, "%s: No commands to run.\n", ProgramName)
-		os.Exit(0)
+		return nil
 	}
 	if genMSBuild {
 		Verbose("%s: Creates VC++ project file(s).\n", ProgramName)
 		outputMSBuild(projdir, projname)
 	} else {
 		if err := outputNinja(); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v", ProgramName, err)
-			os.Exit(1)
+			return err
 		}
 	}
-	os.Exit(0)
+	return nil
 }
 
 // Obtains executable name if possible.
-func getExeName() string {
-	var name = "gobuild"
+func getExecutableName(defaultName string) string {
 	if n, err := os.Executable(); err == nil {
-		name = n
+		return filepath.ToSlash(n)
 	}
-	return filepath.ToSlash(name)
+	return defaultName
 }
 
 // CollectConfigurations collects configurations recursively.
@@ -188,8 +177,7 @@ func CollectConfigurations(info BuildInfo, relChildDir string) (*[]string, error
 }
 
 func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) {
-	// result.Successed = false // Named return value is initialized to 0
-	if relChildDir[len(relChildDir)-1] != '/' {
+	if !strings.HasSuffix(relChildDir, "/") {
 		return nil, errors.New("output directory should end with '/'")
 	}
 	Verbose("%s: Enter \"%s\"\n", ProgramName, relChildDir)
@@ -201,37 +189,41 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 		return nil, errors.Wrapf(err, "failed to read \"%s\"", yamlSource)
 	}
 
-	var d Data
-	if err = yaml.Unmarshal(buf, &d); err != nil {
+	var conf Data
+	if err = yaml.Unmarshal(buf, &conf); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal \"%s\"", yamlSource)
 	}
 	ScannedConfigs = append(ScannedConfigs, yamlSource)
 
 	info.mydir = relChildDir
 	//
-	// select target
+	// select target to build.
 	//
-	currentTarget, _, ok := getTarget(info, d.Target)
+	currentTarget, _, ok := getTarget(info, conf.Target)
 	if !ok {
 		return nil, errors.New("no targets")
 	}
-	if info.target == "" {
+	if len(info.target) == 0 {
 		info.target = currentTarget.Name
 		Verbose("%s: Target is \"%s\".\n", ProgramName, info.target)
 	}
-	info.selectTarget = ""
+	info.selectedTarget = ""
 
 	if level == 0 && option.targetType == "default" {
-		option.targetType = checkType(d.Variable)
+		option.targetType = checkType(conf.Variable)
 	}
 
 	// Merge variable definitions (parent + current).
-	newvar := map[string]string{}
-	for ik, iv := range info.variables {
-		newvar[ik] = iv
-	}
-	info.variables = newvar
-	for _, v := range d.Variable {
+
+	info.variables = (func() map[string]string {
+		result := make(map[string]string)
+		for ik, iv := range info.variables {
+			result[ik] = iv
+		}
+		return result
+	})()
+
+	for _, v := range conf.Variable {
 		if val, ok := v.getValue(&info); ok {
 			switch v.Name {
 			case "enable_response":
@@ -265,86 +257,86 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	info.outputdir = JoinPaths(option.outputDir, relChildDir) + "/" // Proofs '/' ending
 
 	// Constructs include path arguments.
-	for _, pth := range getList(d.Include, info.target) {
+	for _, pth := range getList(conf.Include, info.target) {
 		const prefix = "$output"
 		if strings.HasPrefix(pth, prefix) {
 			info.AddInclude(JoinPaths(info.outputdir, "output"+pth[len(prefix):]))
+			continue
+		}
+		asBuildRootRelative := pth[0] == '$'
+		pth, err = info.StrictInterpolate(pth)
+		if err != nil {
+			return nil, err
+		}
+		if asBuildRootRelative || filepath.IsAbs(pth) {
+			info.AddInclude(pth)
 		} else {
-			useRel := pth[0] == '$'
-			pth, err = info.StrictInterpolate(pth)
-			if err != nil {
-				return nil, err
-			}
-			if !useRel && !filepath.IsAbs(pth) {
-				info.AddInclude(JoinPaths(relChildDir, pth))
-			} else {
-				info.AddInclude(pth)
-			}
+			info.AddInclude(JoinPaths(relChildDir, pth))
 		}
 	}
 	// Constructs defines.
-	for _, d := range getList(d.Define, info.target) {
+	for _, d := range getList(conf.Define, info.target) {
 		info.AddDefines(d)
 	}
 	// Construct other options.
-	for _, o := range getList(d.Option, info.target) {
+	for _, o := range getList(conf.Option, info.target) {
 		info.options, err = appendOption(info, info.options, o, optionPrefix)
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Constructs option list for archiver.
-	for _, a := range getList(d.ArchiveOption, info.target) {
+	for _, a := range getList(conf.ArchiveOption, info.target) {
 		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Constructs option list for converters.
-	for _, c := range getList(d.ConvertOption, info.target) {
+	for _, c := range getList(conf.ConvertOption, info.target) {
 		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Construct option list for linker.
-	for _, l := range getList(d.LinkOption, info.target) {
+	for _, l := range getList(conf.LinkOption, info.target) {
 		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Constructs system library list.
-	for _, ls := range getList(d.Libraries, info.target) {
+	for _, ls := range getList(conf.Libraries, info.target) {
 		info.libraries, err = appendOption(info, info.libraries, ls, optionPrefix+"l")
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Constructs library list.
-	for _, ld := range getList(d.LinkDepend, info.target) {
+	for _, ld := range getList(conf.LinkDepend, info.target) {
 		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Constructs sub-ninjas
-	for _, subninja := range getList(d.SubNinja, info.target) {
+	for _, subninja := range getList(conf.SubNinja, info.target) {
 		subNinjaList = append(subNinjaList, subninja)
 	}
 
-	if err = registerOtherRules(&otherRuleList, info, d.Other); err != nil {
+	if err = registerOtherRules(&otherRuleList, info, conf.Other); err != nil {
 		return nil, err
 	}
 
-	files := getList(d.Source, info.target)
-	cvfiles := getList(d.ConvertList, info.target)
-	testfiles := getList(d.Tests, info.target)
+	files := getList(conf.Source, info.target)
+	cvfiles := getList(conf.ConvertList, info.target)
+	testfiles := getList(conf.Tests, info.target)
 
 	// sub-directories
-	subdirs := getList(d.Subdirs, info.target)
+	subdirs := getList(conf.Subdirs, info.target)
 
-	subArtifacts := []string{}
+	subArtifacts := make([]string, 0, len(subdirs))
 
 	// Recurse into the sub-directories.
 	for _, s := range subdirs {
@@ -360,7 +352,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 
 	// pre build files
-	cmds, err := makePreBuildCommands(info, relChildDir, d.Prebuild)
+	cmds, err := makePreBuildCommands(info, relChildDir, conf.Prebuild)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +436,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 // Retrieves items associated to `targetName`.
 //
 func getList(block []StringList, targetName string) []string {
-	lists := []string{}
+	lists := make([]string, 0, len(block))
 	for _, item := range block {
 		if item.Match(targetName, option.targetType) {
 			appender := func(key interface{}) {
@@ -523,7 +515,7 @@ func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string
 		return result, err
 	}
 
-	options := []string{}
+	options := make([]string, 0, len(info.linkOptions))
 	for _, lo := range info.linkOptions {
 		lo = strings.Replace(lo, "$out", targetPath, -1)
 		options = append(options, lo)
@@ -538,7 +530,8 @@ func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string
 		InFiles:          sourceArtifacts,
 		OutFile:          targetPath,
 		Depends:          info.linkDepends,
-		NeedCommandAlias: true}
+		NeedCommandAlias: true,
+	}
 	result = append(result, &cmd)
 	//fmt.Println("-o " + NowTarget.Name + flist)
 
@@ -575,7 +568,7 @@ func makeConvertCommand(info BuildInfo, loaddir string, createList []string, tar
 		return nil, errors.Errorf("missing the `converter` definitions for \"%s\"", targetName)
 	}
 
-	clist := []string{}
+	clist := make([]string, 0, len(createList))
 	for _, f := range createList {
 		clist = append(clist, JoinPaths(loaddir, f))
 	}
@@ -649,37 +642,36 @@ func appendOption(info BuildInfo, lists []string, opt string, optionPrefix strin
 // target
 //
 func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
-	if info.selectTarget != "" {
+	if 0 < len(info.selectedTarget) {
 		// search target
 		for _, t := range tlist {
-			if info.selectTarget == t.Name {
-				return t, "_" + info.selectTarget, true
+			if info.selectedTarget == t.Name {
+				return t, "_" + info.selectedTarget, true
 			}
 		}
+		return Target{}, "", false
+	}
 
-	} else {
-		if info.target != "" {
-
-			// search by_target
-			for _, t := range tlist {
-				if info.target == t.ByTarget {
-					return t, "_" + info.target, true
-				}
-			}
-			// search target
-			for _, t := range tlist {
-				if info.target == t.Name {
-					return t, "_" + info.target, true
-				}
+	if 0 < len(info.target) {
+		// search by_target
+		for _, t := range tlist {
+			if info.target == t.ByTarget {
+				return t, "_" + info.target, true
 			}
 		}
-		if 0 < len(tlist) {
-			t := tlist[0]
-			if info.target == "" {
-				return t, "_" + t.Name, true
+		// search target
+		for _, t := range tlist {
+			if info.target == t.Name {
+				return t, "_" + info.target, true
 			}
-			return t, "", true
 		}
+	}
+	if 0 < len(tlist) {
+		t := tlist[0]
+		if info.target == "" {
+			return t, "_" + t.Name, true
+		}
+		return t, "", true
 	}
 	return Target{}, "", false
 }
@@ -1003,7 +995,7 @@ func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Oth
 
 		ext := ot.Ext
 
-		optlist := []string{}
+		optlist := make ([]string)
 		for _, o := range getList(ot.Option, info.target) {
 			var err error
 			optlist, err = appendOption(info, optlist, o, optPrefix)
@@ -1388,4 +1380,20 @@ func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
 		}
 	}
 	return v.Value, true
+}
+
+func importEnvironmentVariables() map[string]string {
+	result := make(map[string]string)
+	for _, env := range os.Environ() {
+		values := strings.SplitN(env, "=", 2)
+		switch len(values) {
+		case 0:
+			fallthrough
+		case 1:
+			result[env] = ""
+		default:
+			result[values[0]] = values[1]
+		}
+	}
+	return result
 }
