@@ -21,7 +21,7 @@ type BuildInfo struct {
 	libraries      []string
 	packageTarget  string
 	packageCommand string
-	selectTarget   string
+	selectedTarget string	// Target explicitly specified via command-line.
 	target         string
 	outputdir      string
 	subdir         []string
