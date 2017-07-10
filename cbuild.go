@@ -44,14 +44,14 @@ var (
 	groupArchives   bool
 	responseNewline bool
 
-	subNinjaList      []string
-	appendRules       = make(map[string]AppendBuild)
-	otherRuleList     = make(map[string]OtherRule)
-	commandList       []*BuildCommand
-	otherRuleFileList []OtherRuleFile
-
-	// ScannedConfigs remembers all scanned configuration files.
-	ScannedConfigs []string
+	emitContext struct {
+		subNinjaList      []string
+		appendRules       map[string]AppendBuild
+		otherRuleList     map[string]OtherRule
+		commandList       []*BuildCommand
+		otherRuleFileList []OtherRuleFile
+		scannedConfigs    []string // remembers all scanned configuration files.
+	}
 
 	// ProgramName holds invoked program name.
 	ProgramName = getExecutableName("cbuild")
@@ -111,6 +111,8 @@ func main() {
 	if isDevelop {
 		option.variant = Develop.String()
 	}
+	emitContext.appendRules = make(map[string]AppendBuild)
+	emitContext.otherRuleList = make(map[string]OtherRule)
 	err := cbuild(*projdir, *projname, *genMSBuild)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s:error: %v\n", ProgramName, err)
@@ -142,7 +144,7 @@ func cbuild(projdir string, projname string, genMSBuild bool) error {
 	if _, err := CollectConfigurations(buildinfo, ""); err != nil {
 		return err
 	}
-	if (len(commandList) + len(otherRuleFileList)) <= 0 {
+	if (len(emitContext.commandList) + len(emitContext.otherRuleFileList)) <= 0 {
 		fmt.Fprintf(os.Stderr, "%s: No commands to run.\n", ProgramName)
 		return nil
 	}
@@ -193,7 +195,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	if err = yaml.Unmarshal(buf, &conf); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal \"%s\"", yamlSource)
 	}
-	ScannedConfigs = append(ScannedConfigs, yamlSource)
+	emitContext.scannedConfigs = append(emitContext.scannedConfigs, yamlSource)
 
 	info.mydir = relChildDir
 	//
@@ -322,10 +324,10 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 	// Constructs sub-ninjas
 	for _, subninja := range getList(conf.SubNinja, info.target) {
-		subNinjaList = append(subNinjaList, subninja)
+		emitContext.subNinjaList = append(emitContext.subNinjaList, subninja)
 	}
 
-	if err = registerOtherRules(&otherRuleList, info, conf.Other); err != nil {
+	if err = registerOtherRules(&emitContext.otherRuleList, info, conf.Other); err != nil {
 		return nil, err
 	}
 
@@ -356,13 +358,13 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	commandList = append(commandList, cmds...)
+	emitContext.commandList = append(emitContext.commandList, cmds...)
 	// create compile list
-	cmds, artifacts, err := makeCompileCommands(info, &otherRuleList, relChildDir, files)
+	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files)
 	if err != nil {
 		return nil, err
 	}
-	commandList = append(commandList, cmds...)
+	emitContext.commandList = append(emitContext.commandList, cmds...)
 	var result []string
 
 	switch currentTarget.Type {
@@ -375,7 +377,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 			if err != nil {
 				return nil, err
 			}
-			commandList = append(commandList, libCmd)
+			emitContext.commandList = append(emitContext.commandList, libCmd)
 			result = append(subArtifacts, libCmd.OutFile)
 		} else {
 			Warn("There are no files to build in \"%s\".", relChildDir)
@@ -395,7 +397,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 			if err != nil {
 				return nil, err
 			}
-			commandList = append(commandList, cmds...)
+			emitContext.commandList = append(emitContext.commandList, cmds...)
 		} else {
 			Warn("There are no files to build in \"%s\".", relChildDir)
 		}
@@ -405,7 +407,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 			if e != nil {
 				return nil, e
 			}
-			commandList = append(commandList, cmd)
+			emitContext.commandList = append(emitContext.commandList, cmd)
 		} else {
 			Warn("There are no files to convert in \"%s\".", relChildDir)
 		}
@@ -418,7 +420,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 		if err != nil {
 			return nil, err
 		}
-		commandList = append(commandList, cmds...)
+		emitContext.commandList = append(emitContext.commandList, cmds...)
 	default:
 		/* NO-OP */
 	}
@@ -605,7 +607,7 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 
 	for _, f := range inputs {
 		// first, compile a test driver
-		objcmds, artifacts, err := makeCompileCommands(info, &otherRuleList, loaddir, []string{f})
+		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f})
 		result = append(result, objcmds...)
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
 		cmds, err := makeLinkCommand(
@@ -625,15 +627,16 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 // option
 //
 func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
-	for _, so := range strings.Split(optionPrefix+opt, " ") {
-		so, err := info.StrictInterpolate(so)
+	for _, optstr := range strings.Split(optionPrefix+opt, " ") {
+		s, err := info.StrictInterpolate(optstr)
 		if err != nil {
 			return lists, err
 		}
-		if strings.Index(so, " ") != -1 {
-			so = "\"" + so + "\""
+		if strings.ContainsAny(s, " \t") {
+			lists = append(lists, fmt.Sprintf(`"%s"`, s))
+		} else {
+			lists = append(lists, s)
 		}
-		lists = append(lists, so)
 	}
 	return lists, nil
 }
@@ -728,7 +731,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 		commandLabel := strings.Replace(JoinPaths(info.outputdir, build.Command), "/", "_", -1)
 		deps := []string{}
 
-		if _, ok = appendRules[commandLabel]; !ok {
+		if _, ok = emitContext.appendRules[commandLabel]; !ok {
 			// Create a rule...
 			// Fixes command path.
 			if buildCommand[0] == '$' {
@@ -754,7 +757,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				Command: strings.Replace(buildCommand, "$target", info.target, -1),
 				Desc:    build.Command,
 				Deps:    useDeps}
-			appendRules[commandLabel] = ab
+			emitContext.appendRules[commandLabel] = ab
 		}
 
 		if build.Name[0] != '$' || strings.HasPrefix(build.Name, "$target/") {
@@ -812,6 +815,7 @@ func makeCompileCommands(
 	if len(files) == 0 {
 		return result, artifactPaths, nil
 	}
+
 	compiler, err := info.ExpandVariable("compiler")
 	if err != nil {
 		return result, artifactPaths, errors.Wrapf(err, "missing ${compiler} definitions")
@@ -871,8 +875,8 @@ func makeCompileCommands(
 		srcExt := filepath.Ext(srcPath)
 		if rule, exists := (*otherDict)[srcExt]; exists {
 			// Custom rules
-			if compiler, ok := info.variables[rule.Compiler]; ok {
-				compiler, err := info.Interpolate(compiler)
+			if customCompiler, ok := info.variables[rule.Compiler]; ok {
+				customCompiler, err = info.Interpolate(customCompiler)
 				if err != nil {
 					return result,
 						artifactPaths,
@@ -880,7 +884,7 @@ func makeCompileCommands(
 				}
 				ocmd := OtherRuleFile{
 					Rule:     "compile" + srcExt,
-					Compiler: compiler,
+					Compiler: customCompiler,
 					Infile:   srcName,
 					Outfile:  objName,
 					Include: (func() string {
@@ -914,7 +918,7 @@ func makeCompileCommands(
 				if rule.NeedDepend == true {
 					ocmd.Depend = depName
 				}
-				otherRuleFileList = append(otherRuleFileList, ocmd) // Record it
+				emitContext.otherRuleFileList = append(emitContext.otherRuleFileList, ocmd) // Record it
 			} else {
 				Warn("compiler: Missing a compiler \"%s\" definitions in \"%s\".",
 					rule.Compiler,
@@ -1087,11 +1091,11 @@ func outputNinja() error {
 		ConfigSources []string
 	}
 	ctx := WriteContext{
-		Commands:      commandList,
-		OtherRules:    otherRuleFileList,
-		SubNinjas:     subNinjaList,
+		Commands:      emitContext.commandList,
+		OtherRules:    emitContext.otherRuleFileList,
+		SubNinjas:     emitContext.subNinjaList,
 		NinjaFile:     option.ninjaFile,
-		ConfigSources: ScannedConfigs}
+		ConfigSources: emitContext.scannedConfigs}
 	funcs := template.FuncMap{
 		"escape_drive": escapeDriveColon,
 		"join":         strings.Join}
@@ -1273,10 +1277,11 @@ build always: phony
 		NewlineAsDelimiter: responseNewline,
 		GroupArchives:      groupArchives,
 		OutputDirectory:    filepath.ToSlash(option.outputDir),
-		OtherRules:         otherRuleList,
-		AppendRules:        appendRules,
+		OtherRules:         emitContext.otherRuleList,
+		AppendRules:        emitContext.appendRules,
 		UsePCH:             true,
-		NinjaUpdater:       strings.Join(os.Args, " ")}
+		NinjaUpdater:       strings.Join(os.Args, " "),
+	}
 
 	return tmpl.Execute(file, ctx)
 }
@@ -1285,7 +1290,7 @@ build always: phony
 func outputMSBuild(outdir, projname string) error {
 	var targets []string
 
-	for _, command := range commandList {
+	for _, command := range emitContext.commandList {
 		if command.CommandType != "compile" {
 			continue
 		}
