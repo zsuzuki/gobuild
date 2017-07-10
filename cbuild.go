@@ -995,7 +995,7 @@ func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Oth
 
 		ext := ot.Ext
 
-		optlist := make ([]string)
+		var optlist []string
 		for _, o := range getList(ot.Option, info.target) {
 			var err error
 			optlist, err = appendOption(info, optlist, o, optPrefix)
