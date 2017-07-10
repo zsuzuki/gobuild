@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -32,12 +31,13 @@ const (
 
 var (
 	option struct {
-		targetType string
-		targetName string
-		outputDir  string
-		verbose    bool
-		ninjaFile  string
-		variant    string
+		targetType   string
+		targetName   string
+		outputDir    string
+		verbose      bool
+		ninjaFile    string
+		variant      string
+		templateFile string
 	}
 
 	useResponse     bool
@@ -84,6 +84,7 @@ func main() {
 	flag.StringVar(&option.targetName, "t", "", "build target name")
 	flag.StringVar(&option.outputDir, "o", "build", "build directory")
 	flag.StringVar(&option.ninjaFile, "f", "build.ninja", "output build.ninja filename")
+	flag.StringVar(&option.templateFile, "template", "", "Use external template file")
 	genMSBuild := flag.Bool("msbuild", false, "Export MSBuild project")
 	projdir := flag.String("msbuild-dir", "./", "MSBuild project output directory")
 	projname := flag.String("msbuild-proj", "out", "MSBuild project name")
@@ -1068,6 +1069,8 @@ func checkType(vlist []Variable) string {
 func outputNinja() error {
 	Verbose("%s: Creates \"%s\"\n", ProgramName, option.ninjaFile)
 
+	var err error
+
 	tPath := NewTransientOutput(option.ninjaFile)
 	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
@@ -1077,69 +1080,50 @@ func outputNinja() error {
 	defer tPath.Abort()
 	Verbose("%s: Creating transient output \"%s\"\n", ProgramName, tPath.TempOutput)
 	sink := bufio.NewWriter(file)
-	// execute build
-	if err = outputRules(sink); err != nil {
-		return errors.Wrapf(err, "failed to emit rules.")
-	}
+
+	tmpl, err := getNinjaTemplate(option.templateFile)
 
 	// Emits rules for updating `build.ninja`
 	type WriteContext struct {
-		Commands      []*BuildCommand
-		OtherRules    []OtherRuleFile
-		SubNinjas     []string
-		NinjaFile     string
-		ConfigSources []string
+		TemplateFile       string
+		Platform           string
+		UseResponse        bool
+		NewlineAsDelimiter bool
+		GroupArchives      bool
+		OutputDirectory    string
+		OtherRules         map[string]OtherRule
+		AppendRules        map[string]AppendBuild
+		UsePCH             bool
+		NinjaUpdater       string
+
+		Commands         []*BuildCommand
+		OtherRuleTargets []OtherRuleFile
+		SubNinjas        []string
+		NinjaFile        string
+		ConfigSources    []string
 	}
 	ctx := WriteContext{
-		Commands:      emitContext.commandList,
-		OtherRules:    emitContext.otherRuleFileList,
-		SubNinjas:     emitContext.subNinjaList,
-		NinjaFile:     option.ninjaFile,
-		ConfigSources: emitContext.scannedConfigs}
-	funcs := template.FuncMap{
-		"escape_drive": escapeDriveColon,
-		"join":         strings.Join}
-	commandTemplate := template.Must(template.New("rules").Funcs(funcs).Parse(`# Commands
-{{- define "IMPDEPS"}}
-    {{- if .}} | {{join . " "}}{{end}}
-{{- end}}
-build {{.NinjaFile}} : update_ninja_file {{join .ConfigSources " "}}
-    desc = {{.NinjaFile}}
-{{range $c := .Commands}}
-build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depends " "}} {{template "IMPDEPS" $c.ImplicitDepends}}
-    desc = {{$c.OutFile}}
-{{- if $c.NeedCommandAlias}}
-    {{$c.CommandType}} = {{$c.Command}}
-{{- end}}
-{{- if $c.DepFile}}
-    depf = {{$c.DepFile}}
-{{- end}}
-{{- if $c.Args}}
-    options = {{join $c.Args " "}}
-{{- end}}
-{{end}}
-# Other rules
-{{range $item := .OtherRules}}
-build {{$item.Outfile}} : {{$item.Rule}} {{$item.Infile}}
-    desc     = {{$item.Outfile}}
-    compiler = {{$item.Compiler}}
-{{- if $item.Include}}
-    include  = {{$item.Include}}
-{{- end}}
-{{- if  $item.Option}}
-    option   = {{$item.Option}}
-{{- end}}
-{{- if  $item.Depend}}
-    depf     = {{$item.Depend}}
-{{- end}}
-{{end}}
-{{- if .SubNinjas}}
-{{range $subninja := .SubNinjas}}
-subninja {{$subninja}}
-{{end}}
-{{end}}
-`))
-	commandTemplate.Execute(sink, ctx)
+		TemplateFile:       option.templateFile,
+		Platform:           option.targetType,
+		UseResponse:        useResponse,
+		NewlineAsDelimiter: responseNewline,
+		GroupArchives:      groupArchives,
+		OutputDirectory:    filepath.ToSlash(option.outputDir),
+		OtherRules:         emitContext.otherRuleList,
+		AppendRules:        emitContext.appendRules,
+		UsePCH:             true,
+		NinjaUpdater:       strings.Join(os.Args, " "),
+
+		Commands:         emitContext.commandList,
+		OtherRuleTargets: emitContext.otherRuleFileList,
+		SubNinjas:        emitContext.subNinjaList,
+		NinjaFile:        option.ninjaFile,
+		ConfigSources:    emitContext.scannedConfigs,
+	}
+	err = tmpl.Execute(sink, ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to render template")
+	}
 
 	sink.Flush()
 
@@ -1173,21 +1157,23 @@ subninja {{$subninja}}
 //	return strings.Join(lines, " $\n")
 //}
 
-// Emits common rules.
-func outputRules(file io.Writer) error {
-	type RuleContext struct {
-		Platform           string
-		UseResponse        bool
-		NewlineAsDelimiter bool
-		GroupArchives      bool
-		OutputDirectory    string
-		OtherRules         map[string]OtherRule
-		AppendRules        map[string]AppendBuild
-		UsePCH             bool
-		NinjaUpdater       string
+func getNinjaTemplate(path string) (*template.Template, error) {
+	const rootName = "root"
+
+	funcs := template.FuncMap{
+		"escape_drive": escapeDriveColon,
+		"join":         strings.Join,
 	}
-	//println("Platform: " + targetType)
-	tmpl := template.Must(template.New("common").Parse(`# Rule definitions
+
+	if Exists(path) {
+		b, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to load template \"%s\"", path)
+		}
+		return template.New(rootName).Funcs(funcs).Parse(string(b))
+	}
+	txt := `# AUTOGENERATED using built-in template
+# Rule definitions
 builddir = {{.OutputDirectory}}
 
 rule compile
@@ -1269,21 +1255,50 @@ rule update_ninja_file
 
 build always: phony
 # end of [Rule definitions]
-`))
 
-	ctx := RuleContext{
-		Platform:           option.targetType,
-		UseResponse:        useResponse,
-		NewlineAsDelimiter: responseNewline,
-		GroupArchives:      groupArchives,
-		OutputDirectory:    filepath.ToSlash(option.outputDir),
-		OtherRules:         emitContext.otherRuleList,
-		AppendRules:        emitContext.appendRules,
-		UsePCH:             true,
-		NinjaUpdater:       strings.Join(os.Args, " "),
-	}
+{{- define "IMPDEPS_"}}
+    {{- if .}} | {{join . " "}}{{end}}
+{{- end}}
+{{/* Render rules */}}
 
-	return tmpl.Execute(file, ctx)
+# Commands
+build {{.NinjaFile}} : update_ninja_file {{join .ConfigSources " "}}
+    desc = {{.NinjaFile}}
+{{range $c := .Commands}}
+build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depends " "}} {{template "IMPDEPS_" $c.ImplicitDepends}}
+    desc = {{$c.OutFile}}
+{{- if $c.NeedCommandAlias}}
+    {{$c.CommandType}} = {{$c.Command}}
+{{- end}}
+{{- if $c.DepFile}}
+    depf = {{$c.DepFile}}
+{{- end}}
+{{- if $c.Args}}
+    options = {{join $c.Args " "}}
+{{- end}}
+{{end}}
+# Other targets
+{{range $item := .OtherRuleTargets}}
+build {{$item.Outfile}} : {{$item.Rule}} {{$item.Infile}}
+    desc     = {{$item.Outfile}}
+    compiler = {{$item.Compiler}}
+{{- if $item.Include}}
+    include  = {{$item.Include}}
+{{- end}}
+{{- if  $item.Option}}
+    option   = {{$item.Option}}
+{{- end}}
+{{- if  $item.Depend}}
+    depf     = {{$item.Depend}}
+{{- end}}
+{{end}}
+{{- if .SubNinjas}}
+{{range $subninja := .SubNinjas}}
+subninja {{$subninja}}
+{{end}}
+{{end}}
+`
+	return template.New(rootName).Funcs(funcs).Parse(txt)
 }
 
 // Creates *.vcxproj (for VisualStudio).
