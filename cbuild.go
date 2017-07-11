@@ -1408,11 +1408,11 @@ func importEnvironmentVariables() map[string]string {
 		values := strings.SplitN(env, "=", 2)
 		switch len(values) {
 		case 0:
-			fallthrough
+			continue
 		case 1:
 			result[env] = ""
 		default:
-			result[values[0]] = values[1]
+			result[values[0]] = filepath.ToSlash(values[1]) // Kludge! should be avoided if possible.
 		}
 	}
 	return result
