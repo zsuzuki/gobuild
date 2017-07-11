@@ -102,7 +102,7 @@ build always: phony
 {{/* Render rules */}}
 
 # Commands
-build {{.NinjaFile}} : update_ninja_file {{join .ConfigSources " "}}
+build {{.NinjaFile | escape_drive}} : update_ninja_file {{join .ConfigSources " "}}
     desc = {{.NinjaFile}}
 {{range $c := .Commands}}
 build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depends " "}} {{template "IMPDEPS_" $c.ImplicitDepends}}

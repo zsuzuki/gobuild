@@ -196,7 +196,13 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	if err = yaml.Unmarshal(buf, &conf); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal \"%s\"", yamlSource)
 	}
-	emitContext.scannedConfigs = append(emitContext.scannedConfigs, yamlSource)
+	{
+		absPath, err := filepath.Abs(yamlSource)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to convert \"%s\" to absolute path", yamlSource)
+		}
+		emitContext.scannedConfigs = append(emitContext.scannedConfigs, filepath.ToSlash(absPath))
+	}
 
 	info.mydir = relChildDir
 	//
@@ -709,7 +715,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 			for i, src := range sources {
 				if src[0] == '$' {
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					sources[i] = escapeDriveColon(JoinPaths(sabs))
+					sources[i] = escapeDriveColon1(JoinPaths(sabs))
 				} else if src == "always" {
 					sources[i] = "always |"
 				} else {
@@ -767,7 +773,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				pn = strings.Replace(pn, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			}
 			outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-			outfile = escapeDriveColon(JoinPaths(outfile))
+			outfile = escapeDriveColon1(JoinPaths(outfile))
 			cmd := BuildCommand{
 				Command:          build.Command,
 				CommandType:      commandLabel,
@@ -789,7 +795,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 					dst += ext
 				}
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
-				outfile = escapeDriveColon(JoinPaths(outfile))
+				outfile = escapeDriveColon1(JoinPaths(outfile))
 				cmd := BuildCommand{
 					Command:          build.Command,
 					CommandType:      commandLabel,
@@ -852,7 +858,7 @@ func makeCompileCommands(
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		srcName := escapeDriveColon(JoinPaths(srcPath))
+		srcName := escapeDriveColon1(JoinPaths(srcPath))
 		objName := JoinPaths(objdir, dstPathBase+".o")
 		depName := JoinPaths(objdir, dstPathBase+".d")
 
@@ -1262,7 +1268,7 @@ build always: phony
 {{/* Render rules */}}
 
 # Commands
-build {{.NinjaFile}} : update_ninja_file {{join .ConfigSources " "}}
+build {{.NinjaFile | escape_drive}} : update_ninja_file {{escape_drive .ConfigSources}}
     desc = {{.NinjaFile}}
 {{range $c := .Commands}}
 build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depends " "}} {{template "IMPDEPS_" $c.ImplicitDepends}}
@@ -1325,15 +1331,33 @@ func JoinPaths(paths ...string) string {
 }
 
 // Escapes ':' in path.
-func escapeDriveColon(path string) string {
-	if filepath.IsAbs(path) && strings.Index(path, ":") == 1 {
-		drive := filepath.VolumeName(path)
-		if 0 < len(drive) {
-			drive = strings.Replace(strings.ToLower(drive), ":", "$:", 1)
-			path = drive + path[2:]
+func escapeDriveColon(arg interface{}) (string, error) {
+	switch v := arg.(type) {
+	case string:
+		return escapeDriveColon1(v), nil
+	case []string:
+		tmp := make([]string, 0, len(v))
+		for _, p := range v {
+			tmp = append(tmp, escapeDriveColon1(p))
+		}
+		return strings.Join(tmp, " "), nil
+	default:
+		if s, ok := arg.(fmt.Stringer); ok {
+			return escapeDriveColon1(s.String()), nil
 		}
 	}
-	return path
+	return "", errors.Errorf("can't convert \"%v\" to string", arg)
+}
+
+func escapeDriveColon1(p string) string {
+	if filepath.IsAbs(p) && strings.Index(p, ":") == 1 {
+		drive := filepath.VolumeName(p)
+		if 0 < len(drive) {
+			drive = strings.Replace(strings.ToLower(drive), ":", "$:", 1)
+			p = drive + p[2:]
+		}
+	}
+	return p
 }
 
 // Convert back to escaped path
