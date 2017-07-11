@@ -5,6 +5,7 @@ import (
 
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
+	"path/filepath"
 )
 
 func TestBuildInfo_OptionPrefix(t *testing.T) {
@@ -85,7 +86,7 @@ func TestBuildInfo_MakeExecutablePath(t *testing.T) {
 	Convey("GIVEN: A BuildInfo with .outputdir = \"/usr/local\"", t, func() {
 		info := BuildInfo{variables: map[string]string{}, outputdir: "/usr/local"}
 		Convey("WHEN: Call with \"TEST\"", func() {
-			actual := info.MakeExecutablePath("TEST")
+			actual := filepath.ToSlash (info.MakeExecutablePath("TEST"))
 			Convey("THEN: Should return \"/usr/local/TEST\"", func() {
 				So(actual, ShouldEqual, "/usr/local/TEST")
 			})
@@ -93,7 +94,7 @@ func TestBuildInfo_MakeExecutablePath(t *testing.T) {
 		Convey("WHEN: Set \".THE-SUFFIX\" as ${execute_suffix}", func() {
 			info.variables["execute_suffix"] = ".THE-SUFFIX"
 			Convey("AND WHEN: Call with \"TEST\"", func() {
-				actual := info.MakeExecutablePath("TEST")
+				actual := filepath.ToSlash (info.MakeExecutablePath("TEST"))
 				Convey("THEN: Should return \"/usr/local/TEST.THE-SUFFIX\"", func() {
 					So(actual, ShouldEqual, "/usr/local/TEST.THE-SUFFIX")
 				})
