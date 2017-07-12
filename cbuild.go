@@ -803,7 +803,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 	return result, nil
 }
 
-// Replaces extension to `ext`
+// ReplaceExtension replaces extension to `ext`
 func ReplaceExtension(path string, ext string) string {
 	result := filepath.Base(path)
 	e := filepath.Ext(path)

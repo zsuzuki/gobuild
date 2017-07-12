@@ -1,12 +1,12 @@
 package main
 
 import (
-	"testing"
-
 	"fmt"
-	. "github.com/smartystreets/goconvey/convey"
 	"path/filepath"
 	"strings"
+	"testing"
+
+	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestBuildInfo_OptionPrefix(t *testing.T) {

@@ -21,7 +21,7 @@ type CompileDbItem struct {
 	Arguments []string `json:"arguments"`
 }
 
-// CraeteCompileDbFile creates compilation-database file.
+// CreateCompileDbFile creates compilation-database file.
 func CreateCompileDbFile(outPath string, defs []CompileDbItem) error {
 	var err error
 
