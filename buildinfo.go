@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"errors"
+
+	"github.com/pkg/errors"
 )
 
 // BuildInfo is build information in directory
@@ -20,7 +21,7 @@ type BuildInfo struct {
 	libraries      []string
 	packageTarget  string
 	packageCommand string
-	selectTarget   string
+	selectedTarget string	// Target explicitly specified via command-line.
 	target         string
 	outputdir      string
 	subdir         []string
@@ -28,15 +29,15 @@ type BuildInfo struct {
 	tests          []string
 }
 
-// Retrieves command line option prefix
-func (info BuildInfo) OptionPrefix() string {
+// OptionPrefix retrieves command line option prefix
+func (info *BuildInfo) OptionPrefix() string {
 	if pfx, exists := info.variables["option_prefix"]; exists {
 		return pfx
 	}
 	return "-"
 }
 
-// Appends include path.
+// AddInclude appends include path.
 func (info *BuildInfo) AddInclude(path string) {
 	pfx := info.OptionPrefix()
 	if p := filepath.ToSlash(filepath.Clean(path)); strings.Index(p, " ") != -1 {
@@ -46,15 +47,15 @@ func (info *BuildInfo) AddInclude(path string) {
 	}
 }
 
-// Appends macro definitions.
+// AddDefines appends macro definitions.
 func (info *BuildInfo) AddDefines(def string) {
 	pfx := info.OptionPrefix()
 	info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, def))
 }
 
-// Interpolates given string `s`.
+// Interpolate interpolates given string `s`.
 // Note: Handles $out, $in...
-func (info *BuildInfo) Interpolate (s string) (string, error){
+func (info *BuildInfo) Interpolate(s string) (string, error) {
 	if idx := strings.Index(s, "${"); 0 <= idx {
 		expanded, err := Interpolate(s[idx:], info.variables)
 		if err != nil {
@@ -65,16 +66,31 @@ func (info *BuildInfo) Interpolate (s string) (string, error){
 	return s, nil
 }
 
-// Strictly interpolates given string `s`.
+// StrictInterpolate strictly interpolates given string `s`.
 // Note: Handles $out, $in...
-func (info *BuildInfo) StrictInterpolate (s string) (string, error){
-	return Interpolate(s, info.variables)
+func (info *BuildInfo) StrictInterpolate(s string) (string, error) {
+	if idx := strings.Index(s, "${"); 0 <= idx {
+		expanded, err := StrictInterpolate(s[idx:], info.variables)
+		if err != nil {
+			return "", err
+		}
+		return s[:idx] + expanded, nil
+	}
+	return s, nil
 }
 
-// Retrieves the value associated to symbol `s`.
-func (info *BuildInfo) ExpandVariable (s string) (string, error) {
-	if str, exists := info.variables [s]; exists {
+// ExpandVariable retrieves the value associated to symbol `s`.
+func (info *BuildInfo) ExpandVariable(s string) (string, error) {
+	if str, exists := info.variables[s]; exists {
 		return info.Interpolate(str)
 	}
-	return "", errors.New (fmt.Sprintf ("Variable \"%s\" was not defined.", s))
+	return "", errors.Errorf("variable \"%s\" is not defined", s)
+}
+
+// MakeExecutablePath constructs path for the executables in platform dependent way.
+func (info *BuildInfo) MakeExecutablePath(s string) string {
+	if suffix, ok := info.variables["execute_suffix"]; ok {
+		return filepath.Join(info.outputdir, s+suffix)
+	}
+	return filepath.Join(info.outputdir, s)
 }

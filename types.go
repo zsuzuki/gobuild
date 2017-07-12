@@ -1,85 +1,36 @@
 package main
 
-// Packager make.yml package information
-type Packager struct {
-	Target string
-	Option string
-}
+// KnownBuildType represents the `known` build type
+type KnownBuildType string
 
-// Target make.yml target file information
-type Target struct {
-	Name     string
-	Type     string
-	ByTarget string `yaml:"by_target"`
-	Packager Packager
-}
+const (
+	// Common represents common definitions for all build types.
+	Common KnownBuildType = "list"
+	// Debug represents definitions for the `debug` build.
+	Debug KnownBuildType = "debug"
+	// Release represents definitions for the `release` build.
+	Release KnownBuildType = "release"
+	// Develop represents definitions for the `develop` build.
+	Develop KnownBuildType = "develop"
+	// DevelopRelease represents definitions for the `develop-release` build (i.e. beta).
+	DevelopRelease KnownBuildType = "develop-release"
+	// Product represents definitions for the `product` build (for shipping).
+	Product KnownBuildType = "product"
+)
 
-// StringList make.yml string list('- list: ...')
-type StringList struct {
-	Type           string
-	Target         string
-	Debug          []string `yaml:",flow"`
-	Release        []string `yaml:",flow"`
-	Develop        []string `yaml:",flow"`
-	DevelopRelease []string `yaml:",flow"`
-	Product        []string `yaml:",flow"`
-	List           []string `yaml:",flow"`
-}
+// KnownBuildTypes lists all of `known` build types.
+var KnownBuildTypes = [...]KnownBuildType{
+	Common,
+	Debug,
+	Release,
+	Develop,
+	DevelopRelease,
+	Product}
 
-// Variable make.yml variable section
-type Variable struct {
-	Name   string
-	Value  string
-	Type   string
-	Target string
-	Build  string
+// String returns the string representation of the `KnownBuildType`
+func (t KnownBuildType) String() string {
+	return string(t)
 }
-
-// Build in directory source list
-type Build struct {
-	Name    string
-	Command string
-	Target  string
-	Type    string
-	Deps    string
-	Source  []StringList `yaml:",flow"`
-}
-
-// Other make.yml other section
-type Other struct {
-	Ext         string
-	Command     string
-	Description string
-	NeedDepend  bool `yaml:"need_depend"`
-	Type        string
-	Option      []StringList `yaml:",flow"`
-}
-
-// Data format make.yml top structure
-type Data struct {
-	Target        []Target     `yaml:",flow"`
-	Include       []StringList `yaml:",flow"`
-	Variable      []Variable   `yaml:",flow"`
-	Define        []StringList `yaml:",flow"`
-	Option        []StringList `yaml:",flow"`
-	ArchiveOption []StringList `yaml:"archive_option,flow"`
-	ConvertOption []StringList `yaml:"convert_option,flow"`
-	LinkOption    []StringList `yaml:"link_option,flow"`
-	LinkDepend    []StringList `yaml:"link_depend,flow"`
-	Libraries     []StringList `yaml:",flow"`
-	Prebuild      []Build      `yaml:",flow"`
-	Postbuild     []Build      `yaml:",flow"`
-	Source        []StringList `yaml:",flow"`
-	Convert_List  []StringList `yaml:",flow"`
-	Subdir        []StringList `yaml:",flow"`
-	Tests         []StringList `yaml:",flow"`
-	Other         []Other      `yaml:",flow"`
-	SubNinja      []StringList `yaml:",flow"`
-}
-
-//
-// build information
-//
 
 // OtherRule is used for building non-default targets (ex. .bin .dat ...)
 type OtherRule struct {
@@ -95,14 +46,14 @@ type OtherRule struct {
 
 // OtherRuleFile is not default target(ex. .bin .dat ...) file information
 type OtherRuleFile struct {
-	rule     string
-	compiler string
-	infile   string
-	outfile  string
-	include  string
-	option   string
-	define   string
-	depend   string
+	Rule     string
+	Compiler string
+	Infile   string
+	Outfile  string
+	Include  string
+	Option   string
+	Define   string
+	Depend   string
 }
 
 // AppendBuild ...
@@ -124,10 +75,4 @@ type BuildCommand struct {
 	Depends          []string
 	ImplicitDepends  []string
 	NeedCommandAlias bool
-}
-
-// BuildResult is result by build(in directory)
-type BuildResult struct {
-	success    bool
-	createList []string
 }
