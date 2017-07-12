@@ -108,3 +108,27 @@ func TestFixupCommandPath(t *testing.T) {
 		}
 	})
 }
+
+func TestReplaceExtension(t *testing.T) {
+	type testCase struct {
+		path     string
+		ext      string
+		expected string
+	}
+	cases := []testCase{
+		{path: "foo", ext: ".bar", expected: "foo.bar"},
+		{path: "foo.", ext: ".bar", expected: "foo.bar"},
+		{path: "foo.bar", ext: ".baz", expected: "foo.baz"},
+		{path: "foo.bar", ext: "", expected: "foo"},
+	}
+	for _, c := range cases {
+		Convey(fmt.Sprintf(`GIVEN: "%s"`, c.path), t, func() {
+			Convey(fmt.Sprintf(`WHEN: Replacing extention to "%s"`, c.ext), func() {
+				actual := ReplaceExtension(c.path, c.ext)
+				Convey(fmt.Sprintf(`THEN: Should be "%s"`, c.expected), func() {
+					So(actual, ShouldEqual, c.expected)
+				})
+			})
+		})
+	}
+}
