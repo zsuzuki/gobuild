@@ -747,7 +747,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				if err != nil {
 					return result, errors.Wrapf(err, "failed to obtain the absolute path for \"%s\"", d)
 				}
-				d = filepath.ToSlash(abs)
+				d = escapeDriveColon1(filepath.ToSlash(abs))
 				deps = append(deps, d)
 				buildCommand = r
 			} else if strings.HasPrefix(buildCommand, "../") || strings.HasPrefix(buildCommand, "./") {
