@@ -67,6 +67,8 @@ option:
 
 # define lists
 define:
+- list:
+  - USERNAME=\""${USERNAME}\""
 - target: test3
   list: [ TEST3 ]
 

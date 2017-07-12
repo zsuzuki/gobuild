@@ -13,6 +13,7 @@ extern "C" {
 int
 main()
 {
+  std::cout << USERNAME << std::endl;
   Test t;
   std::cout << t.get() << std::endl;
   std::string a = "OK,Stop";
