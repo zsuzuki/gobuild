@@ -6,6 +6,7 @@ import (
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"path/filepath"
+	"strings"
 )
 
 func TestBuildInfo_OptionPrefix(t *testing.T) {
@@ -33,20 +34,18 @@ func TestBuildInfo_AddInclude(t *testing.T) {
 	Convey("GIVEN: An empty `BuildInfo`", t, func() {
 		info := BuildInfo{}
 		for _, opfx := range []string{"/", "--"} {
+			expected := addPrefix(opfx+"I", "/usr/local", "/usr/foo bar")
 			Convey(fmt.Sprintf("WHEN: option_prefix = \"%s\"", opfx), func() {
 				info.variables = map[string]string{"option_prefix": opfx}
 				Convey("AND WHEN: Call `AddInclude (\"/usr/local\")`", func() {
 					info.AddInclude("/usr/local")
-					Convey(fmt.Sprintf("THEN: info.includes should be [\"%sI/usr/local\"]", opfx), func() {
-						So(len(info.includes), ShouldEqual, 1)
-						So(info.includes, ShouldContain, fmt.Sprintf("%sI/usr/local", opfx))
+					Convey(fmt.Sprintf(`THEN: info.includes should be ["%s"]`, expected[0]), func() {
+						So(info.includes, ShouldResemble, expected[:1])
 					})
 					Convey("AND WHEN: Call `AddInclude (\"/usr/foo bar\")`", func() {
 						info.AddInclude("/usr/foo bar")
-						Convey(fmt.Sprintf("THEN: info includes should be [\"%[1]sI/usr/local\", \"\\\"%[1]sI/usr/foo bar\\\"\"]", opfx), func() {
-							So(len(info.includes), ShouldEqual, 2)
-							So(info.includes[0], ShouldEqual, fmt.Sprintf("%sI/usr/local", opfx))
-							So(info.includes[1], ShouldEqual, fmt.Sprintf("\"%sI/usr/foo bar\"", opfx))
+						Convey(fmt.Sprintf(`THEN: info includes should be ["%s", "%s"]`, expected[0], expected[1]), func() {
+							So(info.includes, ShouldResemble, expected[:2])
 						})
 					})
 				})
@@ -59,46 +58,55 @@ func TestBuildInfo_AddDefines(t *testing.T) {
 	Convey("GIVEN: An empty `BuildInfo`", t, func() {
 		info := BuildInfo{}
 		for _, opfx := range []string{"/", "--"} {
-			Convey(fmt.Sprintf("WHEN: option_prefix = \"%s\"", opfx), func() {
+			inputs := []string{"FOO", "BAR=BAZ", "FOO-BAR=BAZ", "FOO-BAR=BAZ-HOGE"}
+			expected := addPrefix(opfx+"D", "FOO", "BAR=BAZ", "FOO_BAR=BAZ", "FOO_BAR=BAZ-HOGE")
+			Convey(fmt.Sprintf(`WHEN: option_prefix = "%s"`, opfx), func() {
 				info.variables = map[string]string{"option_prefix": opfx}
-				Convey("AND WHEN: Call `AddDefine (\"FOO\")`", func() {
-					info.AddDefines("FOO")
-					expected := fmt.Sprintf("%sDFOO", opfx)
-					Convey(fmt.Sprintf("THEN: info.defines should be [\"%s\"]", expected), func() {
-						So(len(info.defines), ShouldEqual, 1)
-						So(info.defines, ShouldContain, expected)
-					})
-					Convey("AND WHEN: Call `AddDefine (\"BAR=BAZ\")`", func() {
-						info.AddDefines("BAR=BAZ")
-						Convey(fmt.Sprintf("THEN: info.defines should be [\"%[1]sDFOO\", \"%[1]sDBAR=BAZ\"]", opfx), func() {
-							So(len(info.defines), ShouldEqual, 2)
-							So(info.defines[0], ShouldEqual, fmt.Sprintf("%sDFOO", opfx))
-							So(info.defines[1], ShouldEqual, fmt.Sprintf("%sDBAR=BAZ", opfx))
+				for i := range inputs {
+					Convey(fmt.Sprintf(`AND WHEN: Call AddDefine (%s)`,
+						strings.Join(inputs[:i+1], " ")), func() {
+						for _, v := range inputs[:i+1] {
+							info.AddDefines(v)
+						}
+						Convey(fmt.Sprintf(`THEN: info.defines should be %v`, expected[:i+1]), func() {
+							So(info.defines, ShouldResemble, expected[:i+1])
 						})
 					})
-				})
+				}
 			})
 		}
 	})
 }
 
 func TestBuildInfo_MakeExecutablePath(t *testing.T) {
-	Convey("GIVEN: A BuildInfo with .outputdir = \"/usr/local\"", t, func() {
+	Convey(`GIVEN: A BuildInfo with .outputdir = "/usr/local"`, t, func() {
 		info := BuildInfo{variables: map[string]string{}, outputdir: "/usr/local"}
-		Convey("WHEN: Call with \"TEST\"", func() {
-			actual := filepath.ToSlash (info.MakeExecutablePath("TEST"))
-			Convey("THEN: Should return \"/usr/local/TEST\"", func() {
+		Convey(`WHEN: Call with "TEST"`, func() {
+			actual := filepath.ToSlash(info.MakeExecutablePath("TEST"))
+			Convey(`THEN: Should return "/usr/local/TEST"`, func() {
 				So(actual, ShouldEqual, "/usr/local/TEST")
 			})
 		})
-		Convey("WHEN: Set \".THE-SUFFIX\" as ${execute_suffix}", func() {
+		Convey(`WHEN: Set ".THE-SUFFIX" as ${execute_suffix}`, func() {
 			info.variables["execute_suffix"] = ".THE-SUFFIX"
-			Convey("AND WHEN: Call with \"TEST\"", func() {
-				actual := filepath.ToSlash (info.MakeExecutablePath("TEST"))
-				Convey("THEN: Should return \"/usr/local/TEST.THE-SUFFIX\"", func() {
+			Convey(`AND WHEN: Call with "TEST"`, func() {
+				actual := filepath.ToSlash(info.MakeExecutablePath("TEST"))
+				Convey(`THEN: Should return "/usr/local/TEST.THE-SUFFIX"`, func() {
 					So(actual, ShouldEqual, "/usr/local/TEST.THE-SUFFIX")
 				})
 			})
 		})
 	})
+}
+
+func addPrefix(pfx string, args ...string) []string {
+	result := make([]string, 0, len(args))
+	for _, v := range args {
+		if strings.ContainsAny(v, " \t") {
+			result = append(result, fmt.Sprintf("\"%s%s\"", pfx, v))
+			continue
+		}
+		result = append(result, pfx+v)
+	}
+	return result
 }
