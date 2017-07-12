@@ -1119,6 +1119,12 @@ func outputNinja() error {
 	var err error
 
 	tPath := NewTransientOutput(option.ninjaFile)
+	if d := filepath.Dir(option.ninjaFile); !Exists(d) {
+		err = os.MkdirAll(d, 0755)
+		if err != nil {
+			return err
+		}
+	}
 	file, err := os.Create(tPath.TempOutput)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create temporal output \"%s\"", tPath.TempOutput)
