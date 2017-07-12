@@ -21,7 +21,7 @@ type BuildInfo struct {
 	libraries      []string
 	packageTarget  string
 	packageCommand string
-	selectedTarget string	// Target explicitly specified via command-line.
+	selectedTarget string // Target explicitly specified via command-line.
 	target         string
 	outputdir      string
 	subdir         []string
@@ -49,8 +49,16 @@ func (info *BuildInfo) AddInclude(path string) {
 
 // AddDefines appends macro definitions.
 func (info *BuildInfo) AddDefines(def string) {
-	pfx := info.OptionPrefix()
-	info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, def))
+	idef, err := info.StrictInterpolate(def)
+	if err == nil {
+		defname := strings.SplitN(idef, "=", 2)
+		idef = strings.Replace(defname[0], "-", "_", -1)
+		if len(defname) > 1 {
+			idef = idef + "=" + defname[1]
+		}
+		pfx := info.OptionPrefix()
+		info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, idef))
+	}
 }
 
 // Interpolate interpolates given string `s`.
