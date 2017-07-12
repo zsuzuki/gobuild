@@ -25,7 +25,7 @@ import (
 // global variables
 //
 const (
-	cbuildVersion  = "1.0.2"
+	cbuildVersion  = "1.1.0"
 	buildDirectory = "CBuild.dir"
 )
 
@@ -34,6 +34,7 @@ var (
 		targetType   string
 		targetName   string
 		outputDir    string
+		outputRoot   string
 		verbose      bool
 		ninjaFile    string
 		variant      string
@@ -82,7 +83,7 @@ func main() {
 	flag.BoolVar(&isProduct, "product", false, "for production build")
 	flag.StringVar(&option.targetType, "type", "default", "build target type")
 	flag.StringVar(&option.targetName, "t", "", "build target name")
-	flag.StringVar(&option.outputDir, "o", "build", "build directory")
+	flag.StringVar(&option.outputRoot, "o", "build", "build directory")
 	flag.StringVar(&option.ninjaFile, "f", "build.ninja", "output build.ninja filename")
 	flag.StringVar(&option.templateFile, "template", "", "Use external template file")
 	genMSBuild := flag.Bool("msbuild", false, "Export MSBuild project")
@@ -95,7 +96,8 @@ func main() {
 		fmt.Fprintf(os.Stdout, "%s: %v (%s/%s)\n", ProgramName, cbuildVersion, runtime.Version(), runtime.Compiler)
 		os.Exit(0)
 	}
-
+	// Temporally sets option.outputDir
+	option.outputDir = option.outputRoot
 	option.variant = Debug.String()
 	if isDebug {
 		option.variant = Debug.String()
@@ -126,10 +128,10 @@ func cbuild(projdir string, projname string, genMSBuild bool) error {
 	useResponse = false
 	groupArchives = false
 	responseNewline = false
-	if 0 < flag.NArg() && option.targetName == "" {
+	if 0 < flag.NArg() && len(option.targetName) == 0 {
 		option.targetName = flag.Arg(0)
 	}
-	if option.targetName != "" {
+	if 0 < len(option.targetName) {
 		Verbose("%s: Target is \"%s\"\n", ProgramName, option.targetName)
 	}
 	initialDictionary := importEnvironmentVariables()
@@ -137,12 +139,12 @@ func cbuild(projdir string, projname string, genMSBuild bool) error {
 	if _, ok := initialDictionary[optPrefixSym]; !ok {
 		initialDictionary[optPrefixSym] = "-"
 	}
-	buildinfo := BuildInfo{
+	buildInfo := BuildInfo{
 		variables:      initialDictionary,
 		selectedTarget: option.targetName,
 		target:         option.targetName,
 	}
-	if _, err := CollectConfigurations(buildinfo, ""); err != nil {
+	if _, err := CollectConfigurations(buildInfo, ""); err != nil {
 		return err
 	}
 	if (len(emitContext.commandList) + len(emitContext.otherRuleFileList)) <= 0 {
@@ -156,8 +158,42 @@ func cbuild(projdir string, projname string, genMSBuild bool) error {
 		if err := outputNinja(); err != nil {
 			return err
 		}
+		if err := outputCompileDb(); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func outputCompileDb() error {
+	ninjaDir, err := filepath.Abs(filepath.Dir(option.ninjaFile))
+	if err != nil {
+		return err
+	}
+	if !Exists(ninjaDir) {
+		err := os.MkdirAll(ninjaDir, 0755)
+		if err != nil {
+			return errors.Wrapf(err, "failed to create directory \"%s\"", option.outputDir)
+		}
+	}
+	outPath := filepath.Join(option.outputDir, "compile_commands.json")
+	var items []CompileDbItem
+	for _, c := range emitContext.commandList {
+		if c.CommandType != "compile" || len(c.Args) == 0 {
+			continue
+		}
+		args := make([]string, 0, 1+len(c.Args))
+		args = append(args, c.Command)
+		args = append(args, c.Args...)
+		item := CompileDbItem{
+			File:      c.InFiles[0],
+			Directory: ninjaDir,
+			Output:    c.OutFile,
+			Arguments: args,
+		}
+		items = append(items, item)
+	}
+	return CreateCompileDbFile(outPath, items)
 }
 
 // Obtains executable name if possible.
@@ -171,7 +207,7 @@ func getExecutableName(defaultName string) string {
 // CollectConfigurations collects configurations recursively.
 func CollectConfigurations(info BuildInfo, relChildDir string) (*[]string, error) {
 	var childPath string
-	if relChildDir == "" {
+	if len(relChildDir) == 0 {
 		childPath = "./"
 	} else {
 		childPath = filepath.ToSlash(filepath.Clean(relChildDir)) + "/"
@@ -251,15 +287,15 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	if level == 0 {
 		switch option.variant {
 		case Product.String():
-			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Product")
+			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Product")
 		case Develop.String():
-			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Develop")
+			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Develop")
 		case DevelopRelease.String():
-			option.outputDir = JoinPaths(option.outputDir, option.targetType, "DevelopRelease")
+			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "DevelopRelease")
 		case Release.String():
-			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Release")
+			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Release")
 		default:
-			option.outputDir = JoinPaths(option.outputDir, option.targetType, "Debug")
+			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Debug")
 		}
 	}
 
@@ -678,7 +714,7 @@ func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
 	}
 	if 0 < len(tlist) {
 		t := tlist[0]
-		if info.target == "" {
+		if len(info.target) == 0 {
 			return t, "_" + t.Name, true
 		}
 		return t, "", true
@@ -712,19 +748,22 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 		}
 		{
 			// Fixes source elements
-			for i, src := range sources {
-				if src[0] == '$' {
+			newSources := sources[:0]
+			for _, src := range sources {
+				switch {
+				case src[0] == '$':
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					sources[i] = escapeDriveColon1(JoinPaths(sabs))
-				} else if src == "always" {
-					sources[i] = "always |"
-				} else {
+					src = escapeDriveColon1(JoinPaths(sabs))
+				case src == "always":
+					src = "always |"
+				default:
 					expanded, err := info.Interpolate(src)
 					if err != nil {
 						return result, err
 					}
-					sources[i] = JoinPaths(loaddir, expanded)
+					src = JoinPaths(loaddir, expanded)
 				}
+				newSources = append(newSources, src)
 			}
 		}
 		buildCommand, ok := info.variables[build.Command]
@@ -756,14 +795,11 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				deps = append(deps, d)
 				buildCommand = r
 			}
-			useDeps := false
-			if build.Deps != "" {
-				useDeps = true
-			}
 			ab := AppendBuild{
 				Command: strings.Replace(buildCommand, "$target", info.target, -1),
 				Desc:    build.Command,
-				Deps:    useDeps}
+				Deps:    0 < len(build.Deps),
+			}
 			emitContext.appendRules[commandLabel] = ab
 		}
 
@@ -780,21 +816,15 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				Depends:          deps,
 				InFiles:          sources,
 				OutFile:          outfile,
-				NeedCommandAlias: false}
+				NeedCommandAlias: false,
+			}
 			//commandList = append(commandList, &cmd)
 			result = append(result, &cmd)
 		} else {
-			// Found `$...`
-			ext := build.Name[1:] //filepath.Ext(build.Name)
+			// Found `$...` -> extension specific rules.
+			ext := build.Name[1:]
 			for _, src := range sources {
-				dst := filepath.Base(src)
-				next := filepath.Ext(src)
-				if next != "" {
-					dst = dst[0:len(dst)-len(next)] + ext
-				} else {
-					dst += ext
-				}
-				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", dst))
+				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", ReplaceExtension(src, ext)))
 				outfile = escapeDriveColon1(JoinPaths(outfile))
 				cmd := BuildCommand{
 					Command:          build.Command,
@@ -802,13 +832,24 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 					Depends:          deps,
 					InFiles:          []string{src},
 					OutFile:          outfile,
-					NeedCommandAlias: false}
+					NeedCommandAlias: false,
+				}
 				//commandList = append(commandList, &cmd)
 				result = append(result, &cmd)
 			}
 		}
 	}
 	return result, nil
+}
+
+// Replaces extension to `ext`
+func ReplaceExtension(path string, ext string) string {
+	result := filepath.Base(path)
+	e := filepath.Ext(path)
+	if sz := len(e); 0 < sz {
+		return result[:len(result)-sz] + ext
+	}
+	return result + ext
 }
 
 // Build command for compiling C, C++...
@@ -1000,7 +1041,7 @@ func Exists(filename string) bool {
 func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Other) error {
 	optPrefix := info.OptionPrefix()
 	for _, ot := range others {
-		if ot.Type != "" && ot.Type != option.targetType {
+		if 0 < len(ot.Type) && ot.Type != option.targetType {
 			continue
 		}
 
@@ -1392,13 +1433,13 @@ func ToBoolean(s string) bool {
 }
 
 func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
-	if v.Type != "" && v.Type != option.targetType {
+	if 0 < len(v.Type) && v.Type != option.targetType {
 		return
 	}
-	if v.Target != "" && v.Target != info.target {
+	if 0 < len(v.Target) && v.Target != info.target {
 		return
 	}
-	if v.Build != "" {
+	if 0 < len(v.Build) {
 		bld := strings.ToLower(v.Build)
 		switch option.variant {
 		case Debug.String():
