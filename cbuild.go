@@ -165,45 +165,6 @@ func cbuild(projdir string, projname string, genMSBuild bool) error {
 	return nil
 }
 
-func outputCompileDb() error {
-	ninjaDir, err := filepath.Abs(filepath.Dir(option.ninjaFile))
-	if err != nil {
-		return err
-	}
-	if !Exists(ninjaDir) {
-		err := os.MkdirAll(ninjaDir, 0755)
-		if err != nil {
-			return errors.Wrapf(err, "failed to create directory \"%s\"", option.outputDir)
-		}
-	}
-	outPath := filepath.Join(option.outputDir, "compile_commands.json")
-	var items []CompileDbItem
-	for _, c := range emitContext.commandList {
-		if c.CommandType != "compile" || len(c.Args) == 0 {
-			continue
-		}
-		args := make([]string, 0, 1+len(c.Args))
-		args = append(args, c.Command)
-		args = append(args, c.Args...)
-		item := CompileDbItem{
-			File:      c.InFiles[0],
-			Directory: ninjaDir,
-			Output:    c.OutFile,
-			Arguments: args,
-		}
-		items = append(items, item)
-	}
-	return CreateCompileDbFile(outPath, items)
-}
-
-// Obtains executable name if possible.
-func getExecutableName(defaultName string) string {
-	if n, err := os.Executable(); err == nil {
-		return filepath.ToSlash(n)
-	}
-	return defaultName
-}
-
 // CollectConfigurations collects configurations recursively.
 func CollectConfigurations(info BuildInfo, relChildDir string) (*[]string, error) {
 	var childPath string
@@ -1372,6 +1333,38 @@ func outputMSBuild(outdir, projname string) error {
 	return nil
 }
 
+func outputCompileDb() error {
+	ninjaDir, err := filepath.Abs(filepath.Dir(option.ninjaFile))
+	if err != nil {
+		return err
+	}
+	if !Exists(option.outputDir) {
+		err := os.MkdirAll(option.outputDir, 0755)
+		if err != nil {
+			return errors.Wrapf(err, "failed to create directory \"%s\"", option.outputDir)
+		}
+	}
+	outPath := filepath.Join(option.outputDir, "compile_commands.json")
+	var items []CompileDbItem
+	for _, c := range emitContext.commandList {
+		if c.CommandType != "compile" || len(c.Args) == 0 {
+			continue
+		}
+		args := make([]string, 0, 1+len(c.Args))
+		args = append(args, c.Command)
+		args = append(args, c.Args...)
+		args = append(args, "-o", c.OutFile, c.InFiles[0])
+		item := CompileDbItem{
+			File:      c.InFiles[0],
+			Directory: ninjaDir,
+			Output:    c.OutFile,
+			Arguments: args,
+		}
+		items = append(items, item)
+	}
+	return CreateCompileDbFile(outPath, items)
+}
+
 // JoinPaths joins suppiled path components and normalize the result.
 func JoinPaths(paths ...string) string {
 	return filepath.ToSlash(filepath.Clean(filepath.Join(paths...)))
@@ -1471,6 +1464,14 @@ func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
 		}
 	}
 	return v.Value, true
+}
+
+// Obtains executable name if possible.
+func getExecutableName(defaultName string) string {
+	if n, err := os.Executable(); err == nil {
+		return filepath.ToSlash(n)
+	}
+	return defaultName
 }
 
 func importEnvironmentVariables() map[string]string {
