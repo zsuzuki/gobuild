@@ -2,7 +2,7 @@
 Following properties/functions are available:
  - Properties
     - TemplateFile       string     // Template file
-    - Platform           string     // Platform identifier ("WIN32", "PS4"...)
+    - Platform           string     // Platform identifier ("WIN32", "Mac"...)
     - UseResponse        bool       // Prefer using a response file to pass the lengthy arguments
     - NewlineAsDelimiter bool       // When using a response file, delimit items with '\n' instead of '\x20'
     - GroupArchives      bool       // Groups library items (for symbol resolution)

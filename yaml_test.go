@@ -10,7 +10,7 @@ import (
 
 func TestUnmarshalStringList(t *testing.T) {
 	srcYAML := `# YAML Source
-type: [WIN, LINUX, PS4]
+type: [WIN, LINUX, Mac]
 target: foo
 list:
 - list item
@@ -37,8 +37,8 @@ product:
 			err := yaml.Unmarshal([]byte(srcYAML), &slist)
 			Convey("THEN: Should success", func() {
 				So(err, ShouldBeNil)
-				Convey("AND THEN: .Type should contain \"PS4\"", func() {
-					So(slist.Types(), ShouldContain, "PS4")
+				Convey("AND THEN: .Type should contain \"Mac\"", func() {
+					So(slist.Types(), ShouldContain, "Mac")
 				})
 				Convey("AND THEN: .Target should be \"foo\"", func() {
 					So(slist.Target, ShouldEqual, "foo")
@@ -105,7 +105,7 @@ list:
 		})
 		Convey(`GIVEN: YAML with single type`, func() {
 			srcYAML := `
-type: PS4
+type: Mac
 target: foo
 list:
 - item1
@@ -115,8 +115,8 @@ list:
 				err := yaml.Unmarshal([]byte(srcYAML), &slist)
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
-					Convey(`AND THEN: Type should be ["PS4"]`, func() {
-						So(slist.Types(), ShouldResemble, []string{"PS4"})
+					Convey(`AND THEN: Type should be ["Mac"]`, func() {
+						So(slist.Types(), ShouldResemble, []string{"Mac"})
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
@@ -126,7 +126,7 @@ list:
 		})
 		Convey(`GIVEN: YAML with multiple types`, func() {
 			srcYAML := `
-type: [PS4, WIN, LINUX]
+type: [Mac, WIN, LINUX]
 target: foo
 list:
 - item1-2
@@ -136,8 +136,8 @@ list:
 				err := yaml.Unmarshal([]byte(srcYAML), &slist)
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
-					Convey(`AND THEN: Type should be ["PS4", "WIN", "LINUX"]`, func() {
-						So(slist.Types(), ShouldResemble, []string{"PS4", "WIN", "LINUX"})
+					Convey(`AND THEN: Type should be ["Mac", "WIN", "LINUX"]`, func() {
+						So(slist.Types(), ShouldResemble, []string{"Mac", "WIN", "LINUX"})
 					})
 					Convey(`AND THEN: list should be ["item1-2", "dummy-2"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1-2", "dummy-2"})
