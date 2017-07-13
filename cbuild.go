@@ -53,6 +53,10 @@ var (
 		scannedConfigs    []string // remembers all scanned configuration files.
 	}
 
+	project struct {
+		headerFiles []string
+	}
+
 	// ProgramName holds invoked program name.
 	ProgramName = getExecutableName("cbuild")
 
@@ -332,6 +336,16 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	// Constructs sub-ninjas
 	for _, subninja := range getList(conf.SubNinja, info.target) {
 		emitContext.subNinjaList = append(emitContext.subNinjaList, subninja)
+	}
+
+	// Constructs header files.
+	for _, h := range getList(conf.Headers, info.target) {
+		h, err := info.StrictInterpolate(h)
+		if err != nil {
+			return nil, err
+		}
+		h, _ = filepath.Abs(filepath.Join(relChildDir, h))
+		project.headerFiles = append(project.headerFiles, h)
 	}
 
 	if err = registerOtherRules(&emitContext.otherRuleList, info, conf.Other); err != nil {
@@ -1320,6 +1334,8 @@ func outputMSBuild(outdir, projname string) error {
 			targets = append(targets, unescapeDriveColon(infile))
 		}
 	}
+
+	targets = append(targets, project.headerFiles...)
 
 	msbuild.ExportProject(targets, outdir, projname)
 	return nil
