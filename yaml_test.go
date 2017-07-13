@@ -83,6 +83,26 @@ product:
 
 func TestStringList_UnmarshalYAML_Type(t *testing.T) {
 	Convey(`Test unmarshaler type slot`, t, func() {
+		Convey(`GIVEN: YAML with no types`, func() {
+			srcYAML := `
+target: foo
+list:
+- item1
+- dummy`
+			Convey(`WHEN: Unmarshal`, func() {
+				var slist StringList
+				err := yaml.Unmarshal([]byte(srcYAML), &slist)
+				Convey(`THEN: Should success`, func() {
+					So(err, ShouldBeNil)
+					Convey(`AND THEN: Type should be []`, func() {
+						So(slist.Types(), ShouldBeEmpty)
+					})
+					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
+						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
+					})
+				})
+			})
+		})
 		Convey(`GIVEN: YAML with single type`, func() {
 			srcYAML := `
 type: PS4

@@ -53,14 +53,14 @@ type StringList struct {
 }
 
 // Types retrieves list of target types.
-func (s *StringList) Types () []string {
+func (s *StringList) Types() []string {
 	return s.types
 }
 
 // MatchType checks `t` is one of the target type of not.
-func (s *StringList) MatchType (t string) bool {
-	if len (s.types) == 0 {
-		return true	// Wildcard
+func (s *StringList) MatchType(t string) bool {
+	if len(s.types) == 0 {
+		return true // Wildcard
 	}
 	for _, v := range s.types {
 		if v == t {
@@ -73,7 +73,7 @@ func (s *StringList) MatchType (t string) bool {
 // Match checks build conditions are match or not.
 func (s *StringList) Match(target string, targetType string) bool {
 	if len(s.Target) == 0 || s.Target == target {
-		if s.MatchType (targetType) {
+		if s.MatchType(targetType) {
 			return true
 		}
 	}
@@ -105,7 +105,7 @@ func (s *StringList) getItems(key string) *[]string {
 // UnmarshalYAML is the custom handler for mapping YAML to `StringList`
 func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	var fixedSlot struct {
-		Types  interface {}	`yaml:"type"`
+		Types  interface{} `yaml:"type"`
 		Target string
 	}
 	err := unmarshaler(&fixedSlot)
@@ -124,10 +124,12 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 		s.types = []string{v}
 	case []interface{}:
 		for _, t := range v {
-			s.types = append (s.types, t.(string))
+			s.types = append(s.types, t.(string))
 		}
+	case nil:
+		/*NO-OP*/
 	default:
-		panic (fmt.Sprintf("type: %v", v))
+		panic(fmt.Sprintf("type: %v", v))
 	}
 	//s.types = fixedSlot.Type
 	s.Target = fixedSlot.Target
