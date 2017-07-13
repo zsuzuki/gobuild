@@ -48,17 +48,31 @@ func (info *BuildInfo) AddInclude(path string) {
 }
 
 // AddDefines appends macro definitions.
+// Assumes input is `KEY` or `KEY=VALUE`.
+// If `KEY` contains '-', replace it to '_'
 func (info *BuildInfo) AddDefines(def string) {
 	idef, err := info.StrictInterpolate(def)
-	if err == nil {
-		defname := strings.SplitN(idef, "=", 2)
-		idef = strings.Replace(defname[0], "-", "_", -1)
-		if len(defname) > 1 {
-			idef = idef + "=" + defname[1]
-		}
-		pfx := info.OptionPrefix()
-		info.defines = append(info.defines, fmt.Sprintf("%sD%s", pfx, idef))
+	if err != nil {
+		return // Should be handled properly
 	}
+	info.defines = append(info.defines, (func(s string) string {
+		kv := strings.SplitN(s, "=", 2)
+		switch len(kv) {
+		case 0: // WHAT?
+			return s
+		case 1:
+			return fmt.Sprintf("%sD%s",
+				info.OptionPrefix(),
+				strings.Replace(kv[0], "-", "_", -1))
+		case 2:
+			fallthrough
+		default:
+			return fmt.Sprintf("%sD%s=%s",
+				info.OptionPrefix(),
+				strings.Replace(kv[0], "-", "_", -1),
+				kv[1])
+		}
+	})(idef))
 }
 
 // Interpolate interpolates given string `s`.
