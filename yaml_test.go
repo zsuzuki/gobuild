@@ -9,9 +9,8 @@ import (
 )
 
 func TestUnmarshalStringList(t *testing.T) {
-	Convey(`GIVEN: A YAML source`, t, func() {
-		srcYAML := `# YAML Source
-type: PS4
+	srcYAML := `# YAML Source
+type: [WIN, LINUX, PS4]
 target: foo
 list:
 - list item
@@ -32,13 +31,14 @@ product:
 - product item
 - dummy
 `
+	Convey(`GIVEN: A YAML source`, t, func() {
 		Convey("WHEN: Unmarshal", func() {
 			var slist StringList
 			err := yaml.Unmarshal([]byte(srcYAML), &slist)
 			Convey("THEN: Should success", func() {
 				So(err, ShouldBeNil)
-				Convey("AND THEN: .Type should be \"PS4\"", func() {
-					So(slist.Type, ShouldEqual, "PS4")
+				Convey("AND THEN: .Type should contain \"PS4\"", func() {
+					So(slist.Types(), ShouldContain, "PS4")
 				})
 				Convey("AND THEN: .Target should be \"foo\"", func() {
 					So(slist.Target, ShouldEqual, "foo")
@@ -75,6 +75,53 @@ product:
 							})
 						})
 					}
+				})
+			})
+		})
+	})
+}
+
+func TestStringList_UnmarshalYAML_Type(t *testing.T) {
+	Convey(`Test unmarshaler type slot`, t, func() {
+		Convey(`GIVEN: YAML with single type`, func() {
+			srcYAML := `
+type: PS4
+target: foo
+list:
+- item1
+- dummy`
+			Convey(`WHEN: Unmarshal`, func() {
+				var slist StringList
+				err := yaml.Unmarshal([]byte(srcYAML), &slist)
+				Convey(`THEN: Should success`, func() {
+					So(err, ShouldBeNil)
+					Convey(`AND THEN: Type should be ["PS4"]`, func() {
+						So(slist.Types(), ShouldResemble, []string{"PS4"})
+					})
+					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
+						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
+					})
+				})
+			})
+		})
+		Convey(`GIVEN: YAML with multiple types`, func() {
+			srcYAML := `
+type: [PS4, WIN, LINUX]
+target: foo
+list:
+- item1-2
+- dummy-2`
+			Convey(`WHEN: Unmarshal`, func() {
+				var slist StringList
+				err := yaml.Unmarshal([]byte(srcYAML), &slist)
+				Convey(`THEN: Should success`, func() {
+					So(err, ShouldBeNil)
+					Convey(`AND THEN: Type should be ["PS4", "WIN", "LINUX"]`, func() {
+						So(slist.Types(), ShouldResemble, []string{"PS4", "WIN", "LINUX"})
+					})
+					Convey(`AND THEN: list should be ["item1-2", "dummy-2"]`, func() {
+						So(*slist.Items("list"), ShouldResemble, []string{"item1-2", "dummy-2"})
+					})
 				})
 			})
 		})

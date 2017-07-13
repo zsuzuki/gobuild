@@ -47,14 +47,37 @@ type Packager struct {
 
 // StringList make.yml string list('- list: ...')
 type StringList struct {
-	Type   string
+	types  []string
 	Target string
 	items  map[string](*[]string)
 }
 
+// Types retrieves list of target types.
+func (s *StringList) Types () []string {
+	return s.types
+}
+
+// MatchType checks `t` is one of the target type of not.
+func (s *StringList) MatchType (t string) bool {
+	if len (s.types) == 0 {
+		return true	// Wildcard
+	}
+	for _, v := range s.types {
+		if v == t {
+			return true
+		}
+	}
+	return false
+}
+
 // Match checks build conditions are match or not.
 func (s *StringList) Match(target string, targetType string) bool {
-	return (s.Target == "" || s.Target == target) && (s.Type == "" || s.Type == targetType)
+	if len(s.Target) == 0 || s.Target == target {
+		if s.MatchType (targetType) {
+			return true
+		}
+	}
+	return false
 }
 
 // Items retrieves list associated to `key`.
@@ -82,7 +105,7 @@ func (s *StringList) getItems(key string) *[]string {
 // UnmarshalYAML is the custom handler for mapping YAML to `StringList`
 func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	var fixedSlot struct {
-		Type   string
+		Types  interface {}	`yaml:"type"`
 		Target string
 	}
 	err := unmarshaler(&fixedSlot)
@@ -96,7 +119,17 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 			return err
 		}
 	}
-	s.Type = fixedSlot.Type
+	switch v := fixedSlot.Types.(type) {
+	case string:
+		s.types = []string{v}
+	case []interface{}:
+		for _, t := range v {
+			s.types = append (s.types, t.(string))
+		}
+	default:
+		panic (fmt.Sprintf("type: %v", v))
+	}
+	//s.types = fixedSlot.Type
 	s.Target = fixedSlot.Target
 	s.items = items
 	return nil
