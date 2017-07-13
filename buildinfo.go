@@ -53,6 +53,7 @@ func (info *BuildInfo) AddInclude(path string) {
 func (info *BuildInfo) AddDefines(def string) {
 	idef, err := info.StrictInterpolate(def)
 	if err != nil {
+		Warn("not found variable in <%s>\n", def)
 		return // Should be handled properly
 	}
 	info.defines = append(info.defines, (func(s string) string {
