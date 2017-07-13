@@ -61,7 +61,7 @@ var (
 	ProgramName = getExecutableName("cbuild")
 
 	rxTruthy = regexp.MustCompile(`^\s*(?i:t(?:rue)?|y(?:es)?|on|1)(?:\s+.*)?$`)
-	rxFalsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)|no?|off|0)(?:\s+.*)?$`)
+	rxFalsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)?|no?|off|0)(?:\s+.*)?$`)
 )
 
 // The entry point.
