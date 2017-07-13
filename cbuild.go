@@ -732,7 +732,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				switch {
 				case src[0] == '$':
 					sabs, _ := filepath.Abs(filepath.Join(info.outputdir, "output", src[1:]))
-					src = escapeDriveColon1(JoinPaths(sabs))
+					src = JoinPaths(sabs)
 				case src == "always":
 					src = "always |"
 				default:
@@ -765,7 +765,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				if err != nil {
 					return result, errors.Wrapf(err, "failed to obtain the absolute path for \"%s\"", d)
 				}
-				d = escapeDriveColon1(filepath.ToSlash(abs))
+				d = filepath.ToSlash(abs)
 				deps = append(deps, d)
 				buildCommand = r
 			} else if strings.HasPrefix(buildCommand, "../") || strings.HasPrefix(buildCommand, "./") {
@@ -788,7 +788,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				pn = strings.Replace(pn, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			}
 			outfile, _ := filepath.Abs(filepath.Join(info.outputdir, pn))
-			outfile = escapeDriveColon1(JoinPaths(outfile))
+			outfile = JoinPaths(outfile)
 			cmd := BuildCommand{
 				Command:          build.Command,
 				CommandType:      commandLabel,
@@ -804,7 +804,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 			ext := build.Name[1:]
 			for _, src := range sources {
 				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", ReplaceExtension(src, ext)))
-				outfile = escapeDriveColon1(JoinPaths(outfile))
+				outfile = JoinPaths(outfile)
 				cmd := BuildCommand{
 					Command:          build.Command,
 					CommandType:      commandLabel,
@@ -878,7 +878,7 @@ func makeCompileCommands(
 			srcPath = tf
 		}
 		srcPath, _ = filepath.Abs(srcPath)
-		srcName := escapeDriveColon1(JoinPaths(srcPath))
+		srcName := JoinPaths(srcPath)
 		objName := JoinPaths(objdir, dstPathBase+".o")
 		depName := JoinPaths(objdir, dstPathBase+".d")
 
@@ -1296,7 +1296,7 @@ build always: phony
 # end of [Rule definitions]
 
 {{- define "IMPDEPS_"}}
-    {{- if .}} | {{join . " "}}{{end}}
+    {{- if .}} | {{escape_drive .}}{{end}}
 {{- end}}
 {{/* Render rules */}}
 
@@ -1304,7 +1304,7 @@ build always: phony
 build {{.NinjaFile | escape_drive}} : update_ninja_file {{escape_drive .ConfigSources}}
     desc = {{.NinjaFile}}
 {{range $c := .Commands}}
-build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depends " "}} {{template "IMPDEPS_" $c.ImplicitDepends}}
+build {{$c.OutFile | escape_drive}} : {{$c.CommandType}} {{escape_drive $c.InFiles}} {{escape_drive $c.Depends}} {{template "IMPDEPS_" $c.ImplicitDepends}}
     desc = {{$c.OutFile}}
 {{- if $c.NeedCommandAlias}}
     {{$c.CommandType}} = {{$c.Command}}
@@ -1319,7 +1319,7 @@ build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depe
 {{end}}
 # Other targets
 {{range $item := .OtherRuleTargets}}
-build {{$item.Outfile}} : {{$item.Rule}} {{$item.Infile}}
+build {{$item.Outfile | escape_drive}} : {{$item.Rule}} {{escape_drive $item.Infile}}
     desc     = {{$item.Outfile}}
     compiler = {{$item.Compiler}}
 {{- if $item.Include}}
@@ -1352,14 +1352,9 @@ func outputMSBuild(outdir, projname string) error {
 		if command.CommandType != "compile" {
 			continue
 		}
-
-		for _, infile := range command.InFiles {
-			targets = append(targets, unescapeDriveColon(infile))
-		}
+		targets = append(targets, command.InFiles...)
 	}
-
 	targets = append(targets, project.headerFiles...)
-
 	msbuild.ExportProject(targets, outdir, projname)
 	return nil
 }
