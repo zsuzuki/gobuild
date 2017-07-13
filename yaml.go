@@ -23,6 +23,7 @@ type Data struct {
 	Prebuild      []Build      `yaml:",flow"`
 	Postbuild     []Build      `yaml:",flow"`
 	Source        []StringList `yaml:",flow"`
+	Headers       []StringList `yaml:"header,flow"`
 	ConvertList   []StringList `yaml:"convert_list,flow"`
 	Subdirs       []StringList `yaml:"subdir,flow"`
 	Tests         []StringList `yaml:",flow"`
