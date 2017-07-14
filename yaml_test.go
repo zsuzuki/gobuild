@@ -9,6 +9,12 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
+const (
+	platformMac     PlatformId = "Mac"
+	platformWindows PlatformId = "WIN"
+	platformLinux   PlatformId = "LINUX"
+)
+
 func TestUnmarshalStringList(t *testing.T) {
 	srcYAML := `# YAML Source
 type: [WIN, LINUX, Mac]
@@ -39,7 +45,7 @@ product:
 			Convey("THEN: Should success", func() {
 				So(err, ShouldBeNil)
 				Convey("AND THEN: .Type should contain \"Mac\"", func() {
-					So(slist.Types(), ShouldContain, "Mac")
+					So(slist.Types(), ShouldContain, platformMac)
 				})
 				Convey("AND THEN: .Target should be \"foo\"", func() {
 					So(slist.Target, ShouldEqual, "foo")
@@ -117,7 +123,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be ["Mac"]`, func() {
-						So(slist.Types(), ShouldResemble, []string{"Mac"})
+						So(slist.Types(), ShouldResemble, []PlatformId{platformMac})
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
@@ -138,7 +144,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be ["Mac", "WIN", "LINUX"]`, func() {
-						So(slist.Types(), ShouldResemble, []string{"Mac", "WIN", "LINUX"})
+						So(slist.Types(), ShouldResemble, []PlatformId{platformMac, platformWindows, platformLinux})
 					})
 					Convey(`AND THEN: list should be ["item1-2", "dummy-2"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1-2", "dummy-2"})

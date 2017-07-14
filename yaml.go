@@ -8,6 +8,14 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// PlatformId represents target platform
+type PlatformId string
+
+// String retrieves the string representation of PlatformId
+func (p PlatformId) String() string {
+	return string(p)
+}
+
 // Data format make.yml top structure
 type Data struct {
 	Target        []Target     `yaml:",flow"`
@@ -47,13 +55,14 @@ type Packager struct {
 
 // StringList make.yml string list('- list: ...')
 type StringList struct {
-	types  []string
+	// Target selector
 	Target string
+	types  []PlatformId
 	items  map[string](*[]string)
 }
 
 // Types retrieves list of target types.
-func (s *StringList) Types() []string {
+func (s *StringList) Types() []PlatformId {
 	return s.types
 }
 
@@ -63,7 +72,7 @@ func (s *StringList) MatchType(t string) bool {
 		return true // Wildcard
 	}
 	for _, v := range s.types {
-		if v == t {
+		if v.String() == t {
 			return true
 		}
 	}
@@ -121,17 +130,20 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	}
 	switch v := fixedSlot.Types.(type) {
 	case string:
-		s.types = []string{v}
+		s.types = []PlatformId{PlatformId(v)}
 	case []interface{}:
 		for _, t := range v {
-			s.types = append(s.types, t.(string))
+			item, ok := t.(string)
+			if !ok {
+				return errors.Errorf("Unexpected item type %v", t)
+			}
+			s.types = append(s.types, PlatformId(item))
 		}
 	case nil:
 		/*NO-OP*/
 	default:
 		panic(fmt.Sprintf("type: %v", v))
 	}
-	//s.types = fixedSlot.Type
 	s.Target = fixedSlot.Target
 	s.items = items
 	return nil
@@ -141,7 +153,7 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 type Variable struct {
 	Name   string
 	Value  string
-	Type   string
+	Type   PlatformId
 	Target string
 	Build  string
 }
@@ -151,14 +163,19 @@ type Build struct {
 	Name    string
 	Command string
 	Target  string
-	Type    string
+	Type    PlatformId
 	Deps    string
 	Source  []StringList `yaml:",flow"`
 }
 
 // Match returns `true` if build target and target-type matched.
 func (b *Build) Match(target string, targetType string) bool {
-	return (b.Target == "" || b.Target == target) && (b.Type == "" || b.Type == targetType)
+	return (len(b.Target) == 0 || b.Target == target) && (len(b.Type) == 0 || b.Type.String() == targetType)
+}
+
+// MatchType checks `platform` is in the target-types
+func (b *Build) MatchType(platform string) bool {
+	return len(b.Type) == 0 || b.Type.String() == platform
 }
 
 // Other make.yml other section
@@ -167,6 +184,6 @@ type Other struct {
 	Command     string
 	Description string
 	NeedDepend  bool `yaml:"need_depend"`
-	Type        string
+	Type        PlatformId
 	Option      []StringList `yaml:",flow"`
 }

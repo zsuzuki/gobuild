@@ -1024,7 +1024,7 @@ func Exists(filename string) bool {
 func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Other) error {
 	optPrefix := info.OptionPrefix()
 	for _, ot := range others {
-		if 0 < len(ot.Type) && ot.Type != option.targetType {
+		if 0 < len(ot.Type) && ot.Type.String() != option.targetType {
 			continue
 		}
 
@@ -1462,7 +1462,7 @@ func ToBoolean(s string) bool {
 }
 
 func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
-	if 0 < len(v.Type) && v.Type != option.targetType {
+	if 0 < len(v.Type) && v.Type.String() != option.targetType {
 		return
 	}
 	if 0 < len(v.Target) && v.Target != info.target {
