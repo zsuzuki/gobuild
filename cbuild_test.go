@@ -2,63 +2,50 @@ package main
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/leanovate/gopter"
+	"github.com/leanovate/gopter/gen"
 	. "github.com/smartystreets/goconvey/convey"
+	"github.com/leanovate/gopter/convey"
 )
 
-func TestToBooleanTrue(t *testing.T) {
-	Convey("GIVEN: Test cases", t, func() {
-		trueCases := []string{
-			"true", "True", "TRUE", "T",
-			"yes", "Yes", "YES", "Y",
-			"on", "On", "ON",
-			"1"}
-		for _, v := range trueCases {
-			Convey(fmt.Sprintf("WHEN: Evaluating \"%s\"", v), func() {
-				actual := ToBoolean(v)
-				Convey("THEN: Should be `true`", func() {
-					So(actual, ShouldBeTrue)
-				})
-			})
-		}
-		for _, v := range trueCases {
-			addJunk := v + " ABCDEFG"
-			Convey(fmt.Sprintf("WHEN: Evaluationg \"%s\"", addJunk), func() {
-				actual := ToBoolean(v)
-				Convey("THEN: Should be `true`", func() {
-					So(actual, ShouldBeTrue)
-				})
-			})
-		}
+func TestToBoolean_Truthy(t *testing.T) {
+	generator := gopter.CombineGens(gen.OneConstOf("true", "t", "yes", "y", "on", "1"),
+		gen.AlphaString())
+	condition := func (s string) bool {
+		return ToBoolean (s)
+	}
+	Convey(`Truthy values should evaluate to true`, t, func () {
+		So(condition, convey.ShouldSucceedForAll,
+			generator.FlatMap(genVariants, reflect.TypeOf("")).WithLabel("truthy"))
 	})
 }
 
-func TestToBooleanFalse(t *testing.T) {
-	Convey("GIVEN: Test cases", t, func() {
-		falseCases := []string{
-			"false", "False", "FALSE", "F",
-			"no", "No", "NO", "N",
-			"off", "Off", "OFF",
-			"0"}
-		for _, v := range falseCases {
-			Convey(fmt.Sprintf("WHEN: Evaluating \"%s\"", v), func() {
-				actual := ToBoolean(v)
-				Convey("THEN: Should be `false`", func() {
-					So(actual, ShouldBeFalse)
-				})
-			})
-		}
-		for _, v := range falseCases {
-			addJunk := v + " ABCDEFG"
-			Convey(fmt.Sprintf("WHEN: Evaluating \"%s\"", addJunk), func() {
-				actual := ToBoolean(v)
-				Convey("THEN: Should be `false`", func() {
-					So(actual, ShouldBeFalse)
-				})
-			})
-		}
+func TestToBoolean_Falsy(t *testing.T) {
+	generator := gopter.CombineGens(gen.OneConstOf("false", "f", "no", "n", "off", "0"),
+		gen.AlphaString())
+	condition := func (s string) bool {
+		return !ToBoolean (s)
+	}
+	Convey(`Truthy values should evaluate to true`, t, func () {
+		So(condition, convey.ShouldSucceedForAll,
+			generator.FlatMap(genVariants, reflect.TypeOf("")).WithLabel("falsy"))
 	})
+}
+
+// genVariants constructs a generator for testing `ToBoolean`.
+func genVariants (arg interface {}) gopter.Gen {
+	args := arg.([]interface{})
+	s := args[0].(string)
+	t := args[1].(string)
+	return gen.OneConstOf(s, strings.ToUpper(s), strings.Title(s),
+		fmt.Sprintf("%s %s", s, t),
+		fmt.Sprintf("%s %s", strings.ToUpper(s), t),
+		fmt.Sprintf("%s %s", strings.Title(s), t),
+	)
 }
 
 func TestToBooleanUndefined(t *testing.T) {
@@ -110,25 +97,26 @@ func TestFixupCommandPath(t *testing.T) {
 }
 
 func TestReplaceExtension(t *testing.T) {
-	type testCase struct {
-		path     string
-		ext      string
-		expected string
+	condition := func (base string, ext string, newExt string) bool {
+		o := base + ext
+		s := ReplaceExtension(o, newExt)
+		return o == ReplaceExtension(s, ext)
 	}
-	cases := []testCase{
-		{path: "foo", ext: ".bar", expected: "foo.bar"},
-		{path: "foo.", ext: ".bar", expected: "foo.bar"},
-		{path: "foo.bar", ext: ".baz", expected: "foo.baz"},
-		{path: "foo.bar", ext: "", expected: "foo"},
-	}
-	for _, c := range cases {
-		Convey(fmt.Sprintf(`GIVEN: "%s"`, c.path), t, func() {
-			Convey(fmt.Sprintf(`WHEN: Replacing extention to "%s"`, c.ext), func() {
-				actual := ReplaceExtension(c.path, c.ext)
-				Convey(fmt.Sprintf(`THEN: Should be "%s"`, c.expected), func() {
-					So(actual, ShouldEqual, c.expected)
-				})
-			})
-		})
-	}
+	genBase := gopter.CombineGens(gen.Identifier(), gen.OneConstOf("", ".")).FlatMap(func (arg interface {}) gopter.Gen {
+		args := arg.([]interface{})
+		a0 := args [0].(string)
+		a1 := args [1].(string)
+		return gen.OneConstOf(a0, a0 + a1)
+	}, reflect.TypeOf(""))
+	genExt := gen.Identifier().FlatMap(func (arg interface {}) gopter.Gen {
+		s := arg.(string)
+		return gen.Const(fmt.Sprintf(".%s", s))
+	}, reflect.TypeOf(""))
+
+	Convey(`Replace extention twice should match the original`, t, func() {
+		So(condition, convey.ShouldSucceedForAll,
+			genBase.WithLabel("base"),
+			genExt.WithLabel("old"),
+			genExt.WithLabel("new"))
+	})
 }
