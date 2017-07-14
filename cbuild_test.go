@@ -34,7 +34,7 @@ func TestToBoolean_Falsy(t *testing.T) {
 	condition := func(s string) bool {
 		return !ToBoolean(s)
 	}
-	Convey(`Truthy values should evaluate to true`, t, func() {
+	Convey(`Falsy values should evaluate to false`, t, func() {
 		So(condition, convey.ShouldSucceedForAll,
 			generator.FlatMap(genVariants, reflect.TypeOf("")).WithLabel("falsy"))
 	})
