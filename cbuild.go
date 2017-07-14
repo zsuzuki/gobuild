@@ -822,8 +822,12 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 }
 
 // ReplaceExtension replaces extension to `ext`
+// Accepts both `.EXT` and `EXT` as a new extension.
 func ReplaceExtension(path string, ext string) string {
 	result := filepath.Base(path)
+	if ! strings.HasPrefix(ext,".") {
+		ext = "." + ext
+	}
 	e := filepath.Ext(path)
 	if sz := len(e); 0 < sz {
 		return result[:len(result)-sz] + ext
