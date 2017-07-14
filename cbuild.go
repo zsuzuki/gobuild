@@ -1364,6 +1364,7 @@ func outputCompileDb() error {
 	if err != nil {
 		return err
 	}
+	ninjaDir = filepath.ToSlash(ninjaDir)
 	if !Exists(option.outputDir) {
 		err := os.MkdirAll(option.outputDir, 0755)
 		if err != nil {
@@ -1376,12 +1377,16 @@ func outputCompileDb() error {
 		if c.CommandType != "compile" || len(c.Args) == 0 {
 			continue
 		}
+		infile := c.InFiles[0]
+		if p, err := filepath.Rel(ninjaDir, infile); err == nil {
+			infile = filepath.ToSlash(p)
+		}
 		args := make([]string, 0, 1+len(c.Args))
 		args = append(args, c.Command)
 		args = append(args, c.Args...)
-		args = append(args, "-o", c.OutFile, c.InFiles[0])
+		args = append(args, "-o", c.OutFile, infile)
 		item := CompileDbItem{
-			File:      c.InFiles[0],
+			File:      infile,
 			Directory: ninjaDir,
 			Output:    c.OutFile,
 			Arguments: args,
@@ -1426,11 +1431,6 @@ func escapeDriveColon1(p string) string {
 	return p
 }
 
-// Convert back to escaped path
-func unescapeDriveColon(path string) string {
-	return strings.Replace(path, "$:", ":", 1)
-}
-
 // Verbose output if wanted
 func Verbose(format string, args ...interface{}) {
 	if option.verbose {
@@ -1438,7 +1438,7 @@ func Verbose(format string, args ...interface{}) {
 	}
 }
 
-// Warn emit a warning to `os.Stderr`
+// Warn emits a warning to `os.Stderr`
 func Warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "%s:warning:", ProgramName)
 	fmt.Fprintf(os.Stderr, format, args...)
