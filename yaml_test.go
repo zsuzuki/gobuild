@@ -64,7 +64,7 @@ product:
 					for _, k := range KnownBuildTypes {
 						Convey(fmt.Sprintf(`AND WHEN: Call Item ("%s")`, k.String()), func() {
 							l := slist.Items(k)
-							Convey("AND THEN: Should not return nil", func() {
+							Convey("THEN: Should not return nil", func() {
 								So(l, ShouldNotBeNil)
 								Convey(fmt.Sprintf("AND THEN: Should return [\"%s item\", \"dummy\"]", k.String()), func() {
 									So(*l, ShouldResemble, []string{fmt.Sprintf("%s item", k.String()), "dummy"})
@@ -78,7 +78,7 @@ product:
 						Convey(fmt.Sprintf(`AND WHEN: Call Item ("%s")`, k.String()), func() {
 							key := k.String()
 							l := slist.Items(key)
-							Convey("AND THEN: Should not return nil", func() {
+							Convey("THEN: Should not return nil", func() {
 								So(l, ShouldNotBeNil)
 								Convey(fmt.Sprintf("AND THEN: Should return [\"%s item\", \"dummy\"]", key), func() {
 									So(*l, ShouldResemble, []string{fmt.Sprintf("%s item", key), "dummy"})
@@ -94,7 +94,7 @@ product:
 
 func TestStringList_UnmarshalYAML_Type(t *testing.T) {
 	Convey(`Test unmarshaler type slot`, t, func() {
-		Convey(`GIVEN: YAML with no types`, func() {
+		Convey(`GIVEN: YAML with no platform specifications`, func() {
 			srcYAML := `
 target: foo
 list:
@@ -106,7 +106,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be []`, func() {
-						So(slist.Types(), ShouldBeEmpty)
+						So(slist.Platforms, ShouldBeNil)
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
@@ -127,7 +127,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be ["Mac"]`, func() {
-						So(slist.Types(), ShouldResemble, []PlatformID{platformMac})
+						So(slist.Platforms.ToSlice(), ShouldResemble, []PlatformID{platformMac})
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
@@ -135,7 +135,7 @@ list:
 				})
 			})
 		})
-		Convey(`GIVEN: YAML with multiple types`, func() {
+		Convey(`GIVEN: YAML with multiple platform specifications`, func() {
 			srcYAML := `
 type: [Mac, WIN, LINUX]
 target: foo
@@ -147,108 +147,14 @@ list:
 				err := yaml.Unmarshal([]byte(srcYAML), &slist)
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
-					Convey(`AND THEN: Type should be ["Mac", "WIN", "LINUX"]`, func() {
-						So(slist.Types(), ShouldResemble, []PlatformID{platformMac, platformWindows, platformLinux})
+					Convey(`AND THEN: Type should contain "Mac", "WIN" and "LINUX"`, func() {
+						So(slist.MatchType("LINUX"), ShouldBeTrue)
+						So(slist.MatchType("Mac"), ShouldBeTrue)
+						So(slist.MatchType("WIN"), ShouldBeTrue)
 					})
 					Convey(`AND THEN: list should be ["item1-2", "dummy-2"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1-2", "dummy-2"})
 					})
-				})
-			})
-		})
-	})
-}
-
-func TestPlatformID_Simple(t *testing.T) {
-	Convey(`GIVEN: An empty PlatformIDSet`, t, func() {
-		tmp := NewPlatformIDSet()
-		Convey(`WHEN: Add some values`, func() {
-			tmp.Add("abc")
-			tmp.Add("def")
-			Convey(`AND WHEN: Marshal it`, func() {
-				b, err := yaml.Marshal(tmp)
-				t.Logf("b = %s", string(b))
-				Convey(`THEN: Should success`, func() {
-					So(err, ShouldBeNil)
-					Convey(`AND WHEN: Unmarshal it`, func() {
-						vv := NewPlatformIDSet()
-						err = yaml.Unmarshal(b, &vv)
-						Convey(`THEN: Should success`, func() {
-							So(err, ShouldBeNil)
-							Convey(`AND THEN: Contains added values`, func() {
-								So(vv.Contains("abc"), ShouldBeTrue)
-								So(vv.Contains("def"), ShouldBeTrue)
-							})
-						})
-					})
-				})
-			})
-		})
-	})
-}
-
-func TestPlatformIDSet_MarshalThenUnmarshal(t *testing.T) {
-	arbitraries := arbitrary.DefaultArbitraries()
-	arbitraries.RegisterGen(gen.Identifier().Map(func(arg interface{}) PlatformID {
-		v := arg.(string)
-		return PlatformID(v)
-	}))
-	arbitraries.RegisterGen(gen.SliceOf(gen.Identifier()).Map(func(arg interface{}) *PlatformIDSet {
-		result := NewPlatformIDSet()
-		for _, v := range arg.([]string) {
-			result.Add(PlatformID(v))
-		}
-		return result
-	}))
-	condition := func(platforms *PlatformIDSet) bool {
-		b, err := yaml.Marshal(platforms)
-		if err != nil {
-			t.Logf("%v", err)
-			return false
-		}
-		t.Logf(string(b))
-		vv := new(PlatformIDSet)
-		err = yaml.Unmarshal(b, vv)
-		if err != nil {
-			t.Logf("%v", err)
-			return false
-		}
-		return platforms.Equals(*vv)
-	}
-	Convey(`Perform Marshal then Unmarshal return to original`, t, func() {
-		So(condition, convey.ShouldSucceedForAll, arbitraries)
-	})
-}
-
-func TestPlatformIDSet_UnmarshalYAML(t *testing.T) {
-	Convey(`GIVEN: YAML Source`, t, func() {
-		src := `
-LINUX
-`
-		Convey(`WHEN: Unmarshal it`, func() {
-			v := NewPlatformIDSet()
-			err := yaml.Unmarshal(([]byte)(src), v)
-			Convey(`THEN: Should success`, func() {
-				So(err, ShouldBeNil)
-				Convey(`AND WHEN: Should contain LINUX`, func() {
-					So(v.Contains("LINUX"), ShouldBeTrue)
-				})
-			})
-		})
-	})
-	Convey(`GIVEN: YAML Source`, t, func() {
-		src := `
-[LINUX, Windows, BeOS]
-`
-		Convey(`WHEN: Unmarshal it`, func() {
-			v := NewPlatformIDSet()
-			err := yaml.Unmarshal(([]byte)(src), v)
-			Convey(`THEN: Should success`, func() {
-				So(err, ShouldBeNil)
-				Convey(`AND WHEN: Should contain LINUX, Windows and BeOS`, func() {
-					So(v.Contains("LINUX"), ShouldBeTrue)
-					So(v.Contains("Windows"), ShouldBeTrue)
-					So(v.Contains("BeOS"), ShouldBeTrue)
 				})
 			})
 		})
@@ -261,18 +167,18 @@ func TestVariable(t *testing.T) {
 		v := arg.(string)
 		return PlatformID(v)
 	}))
-	arbitraries.RegisterGen(gen.SliceOf(gen.Identifier()).Map(func(arg interface{}) map[PlatformID]bool {
-		result := make(map[PlatformID]bool)
+	arbitraries.RegisterGen(gen.SliceOf(gen.Identifier()).Map(func(arg interface{}) *PlatformIDSet {
+		var result PlatformIDSet
 		for _, v := range arg.([]string) {
-			result[PlatformID(v)] = true
+			result.Add(PlatformID(v))
 		}
-		return result
+		return &result
 	}))
-	condition := func(name string, value string, platforms map[PlatformID]bool, target string, build string) bool {
+	condition := func(name string, value string, platforms *PlatformIDSet, target string, build string) bool {
 		v := Variable{
 			Name:      name,
 			Value:     value,
-			platforms: platforms,
+			Platforms: platforms,
 			Target:    target,
 			Build:     build,
 		}
@@ -295,17 +201,3 @@ func TestVariable(t *testing.T) {
 		So(condition, convey.ShouldSucceedForAll, arbitraries)
 	})
 }
-
-//func TestIntParse(t *testing.T) {
-//  properties := gopter.NewProperties(nil)
-//  arbitraries := arbitrary.DefaultArbitraries()
-//
-//  properties.Property("printed integers can be parsed", arbitraries.ForAll(
-//		func(a int64) bool {
-//			str := fmt.Sprintf("%d", a)
-//			parsed, err := strconv.ParseInt(str, 10, 64)
-//			return err == nil && parsed == a
-//		}))
-//
-//  properties.TestingRun(t)
-//}

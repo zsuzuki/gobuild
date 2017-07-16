@@ -1027,11 +1027,11 @@ func Exists(filename string) bool {
 func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Other) error {
 	optPrefix := info.OptionPrefix()
 	for _, ot := range others {
-		if 0 < len(ot.Type) && ot.Type.String() != option.platform {
+		if ! ot.MatchPlatform(option.platform) {
 			continue
 		}
 
-		ext := ot.Ext
+		ext := ot.Extension
 
 		var optlist []string
 		for _, o := range getList(ot.Option, info.target) {

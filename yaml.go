@@ -3,102 +3,11 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
-
-// PlatformID represents target platform
-type PlatformID string
-
-// String retrieves the string representation of PlatformID
-func (p PlatformID) String() string {
-	return string(p)
-}
-
-// PlatformIDSet is a set of PlatformIDs.
-type PlatformIDSet struct {
-	set map[string]bool
-}
-
-// NewPlatformIDSet constructs a fresh PlatformIDSet structure.
-func NewPlatformIDSet() *PlatformIDSet {
-	result := new(PlatformIDSet)
-	result.set = make(map[string]bool)
-	return result
-}
-
-// Contains returns true if `id` is in the set.
-func (ps *PlatformIDSet) Contains(id interface{}) bool {
-	var ok bool
-	switch v := id.(type) {
-	case string:
-		_, ok = ps.set[v]
-	case fmt.Stringer:
-		_, ok = ps.set[v.String()]
-	default:
-		panic("failed to convert id into PlatformID")
-	}
-	return ok
-}
-
-// Add adds `id` to set.
-func (ps *PlatformIDSet) Add(id PlatformID) *PlatformIDSet {
-	ps.set[string(id)] = true
-	return ps
-}
-
-// Equals checks the equality of two `PlatformIDSet`s.
-func (ps *PlatformIDSet) Equals(other PlatformIDSet) bool {
-	if len(ps.set) != len(other.set) {
-		return false
-	}
-	for k := range ps.set {
-		if _, ok := other.set[k]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-// MarshalYAML is called while marshaling PlatformIDSet.
-func (ps *PlatformIDSet) MarshalYAML() (interface{}, error) {
-	if len(ps.set) == 0 {
-		return []string{}, nil
-	}
-	result := make([]string, 0, len(ps.set))
-	for k := range ps.set {
-		result = append(result, string(k))
-	}
-	sort.Strings(result)
-	return result, nil
-}
-
-// UnmarshalYAML is called while unmarshaling PlatformIDSet.
-func (ps *PlatformIDSet) UnmarshalYAML(unmarshaler func(interface{}) error) error {
-	var ids interface{}
-	//panic ("*** OOPS ***")
-	err := unmarshaler(&ids)
-	if err != nil {
-		errors.Wrapf(err, "failed to unmarshal PlatformIDSet")
-	}
-	ps.set = make(map[string]bool)
-	switch v := ids.(type) {
-	case string:
-		ps.set[v] = true
-	case []interface{}:
-		for _, val := range v {
-			ps.set[val.(string)] = true
-		}
-	case nil:
-		/* NO-OP */
-	default:
-		return errors.Errorf("unexpected type %v found", v)
-	}
-	return nil
-}
 
 // Data format make.yml top structure
 type Data struct {
@@ -140,27 +49,25 @@ type Packager struct {
 // StringList make.yml string list('- list: ...')
 type StringList struct {
 	// Target selector
-	Target string
-	types  []PlatformID
-	items  map[string](*[]string)
+	Target    string
+	Platforms *PlatformIDSet
+	items     map[string](*[]string)
 }
 
-// Types retrieves list of target types.
+// Types retrieves list of target platforms.
 func (s *StringList) Types() []PlatformID {
-	return s.types
+	if s.Platforms == nil {
+		return make([]PlatformID, 0)
+	}
+	return s.Platforms.ToSlice()
 }
 
 // MatchType checks `t` is one of the target type of not.
 func (s *StringList) MatchType(t string) bool {
-	if len(s.types) == 0 {
+	if s.Platforms == nil {
 		return true // Wildcard
 	}
-	for _, v := range s.types {
-		if v.String() == t {
-			return true
-		}
-	}
-	return false
+	return s.Platforms.Contains(t)
 }
 
 // Match checks build conditions are match or not.
@@ -198,7 +105,7 @@ func (s *StringList) getItems(key string) *[]string {
 // UnmarshalYAML is the custom handler for mapping YAML to `StringList`
 func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	var fixedSlot struct {
-		Types  interface{} `yaml:"type"`
+		Types  *PlatformIDSet `yaml:"type"`
 		Target string
 	}
 	err := unmarshaler(&fixedSlot)
@@ -212,22 +119,7 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 			return err
 		}
 	}
-	switch v := fixedSlot.Types.(type) {
-	case string:
-		s.types = []PlatformID{PlatformID(v)}
-	case []interface{}:
-		for _, t := range v {
-			item, ok := t.(string)
-			if !ok {
-				return errors.Errorf("Unexpected item type %v", t)
-			}
-			s.types = append(s.types, PlatformID(item))
-		}
-	case nil:
-		/*NO-OP*/
-	default:
-		panic(fmt.Sprintf("type: %v", v))
-	}
+	s.Platforms = fixedSlot.Types
 	s.Target = fixedSlot.Target
 	s.items = items
 	return nil
@@ -237,113 +129,34 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 type Variable struct {
 	Name      string
 	Value     string
-	platforms map[PlatformID]bool
+	Platforms *PlatformIDSet `yaml:"type"`
 	Target    string
 	Build     string
 }
 
 // Equals checks v == other.
 func (v *Variable) Equals(other *Variable) bool {
-	if v.Name != other.Name ||
-		v.Value != other.Value ||
-		v.Target != other.Target ||
-		v.Build != other.Build ||
-		len(v.platforms) != len(other.platforms) {
+	if !(v.Name == other.Name &&
+		v.Value == other.Value &&
+		v.Target == other.Target &&
+		v.Build == other.Build) {
 		return false
 	}
-	for key, val := range v.platforms {
-		if oVal, ok := other.platforms[key]; !ok || val != oVal {
-			return false
+	if v.Platforms == nil {
+		if other.Platforms == nil {
+			return true
 		}
+		return false
 	}
-	return true
-}
-
-// Platforms retrieves associated PlatformIDs.
-func (v *Variable) Platforms() []PlatformID {
-	result := make([]PlatformID, 0, len(v.platforms))
-	for key := range v.platforms {
-		result = append(result, PlatformID(key))
-	}
-	sort.Slice(result, func(i int, j int) bool {
-		return result[i].String() < result[j].String()
-	})
-	return result
-}
-
-// MarshalYAML is called while yaml.Marshal (for custom marshaling).
-func (v *Variable) MarshalYAML() (interface{}, error) {
-	var result struct {
-		Name      string
-		Value     string
-		Target    string
-		Build     string
-		Platforms interface{} `yaml:"type,flow,omitempty"`
-	}
-	result.Name = v.Name
-	result.Value = v.Value
-	result.Target = v.Target
-	result.Build = v.Build
-	p := make([]string, 0, len(v.platforms))
-	for key := range v.platforms {
-		p = append(p, string(key))
-	}
-	sort.Strings(p)
-	switch len(p) {
-	case 0:
-		result.Platforms = nil
-	case 1:
-		result.Platforms = p[0]
-	default:
-		result.Platforms = p
-	}
-	return result, nil
-}
-
-// UnmarshalYAML is called while yaml.Unmarshal (for custom unmarshaing).
-func (v *Variable) UnmarshalYAML(unmarshaler func(interface{}) error) error {
-	var err error
-
-	var slots struct {
-		Name      string
-		Value     string
-		Target    string
-		Build     string
-		Platforms interface{} `yaml:"type"`
-	}
-	err = unmarshaler(&slots)
-	if err != nil {
-		return errors.Wrapf(err, "unmarshaling failed on `Variable` fixed slots")
-	}
-	v.Name = slots.Name
-	v.Value = slots.Value
-	v.Target = slots.Target
-	v.Build = slots.Build
-	v.platforms = make(map[PlatformID]bool)
-	switch val := slots.Platforms.(type) {
-	case string:
-		v.platforms[PlatformID(val)] = true
-	case []interface{}:
-		for _, t := range val {
-			v.platforms[PlatformID(t.(string))] = true
-		}
-	case nil:
-		/* NO-OP */
-	default:
-		panic(fmt.Sprintf("type: %v", v))
-	}
-	return nil
+	return v.Platforms.Equals(*other.Platforms)
 }
 
 // MatchPlatform checks supplied platform `s` is matched or not.
 func (v *Variable) MatchPlatform(platform string) bool {
-	if len(v.platforms) == 0 {
+	if v.Platforms == nil {
 		return true
 	}
-	if _, ok := v.platforms[PlatformID(platform)]; ok {
-		return true
-	}
-	return false
+	return v.Platforms.Contains(platform)
 }
 
 // GetMatchedValue returns the value of this variable if conditions met.
@@ -398,17 +211,24 @@ func (b *Build) Match(target string, targetType string) bool {
 	return (len(b.Target) == 0 || b.Target == target) && (len(b.Type) == 0 || b.Type.String() == targetType)
 }
 
-// MatchType checks `platform` is in the target-types
+// MatchType checks `platform` is in the target platforms.
 func (b *Build) MatchType(platform string) bool {
 	return len(b.Type) == 0 || b.Type.String() == platform
 }
 
 // Other make.yml other section
 type Other struct {
-	Ext         string
-	Command     string
-	Description string
-	NeedDepend  bool `yaml:"need_depend"`
-	Type        PlatformID
-	Option      []StringList `yaml:",flow"`
+	Extension   string         `yaml:"ext"`
+	Command     string         `yaml:"command"`
+	Description string         `yaml:"description"`
+	NeedDepend  bool           `yaml:"need_depend"`
+	Platforms   *PlatformIDSet `yaml:"type"`
+	Option      []StringList   `yaml:"option,flow"`
+}
+
+func (o *Other) MatchPlatform(platform string) bool {
+	if o.Platforms == nil {
+		return true
+	}
+	return o.Platforms.Contains(platform)
 }
