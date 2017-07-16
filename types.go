@@ -25,7 +25,8 @@ var KnownBuildTypes = [...]KnownBuildType{
 	Release,
 	Develop,
 	DevelopRelease,
-	Product}
+	Product,
+}
 
 // String returns the string representation of the `KnownBuildType`
 func (t KnownBuildType) String() string {
