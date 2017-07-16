@@ -492,15 +492,16 @@ func getList(block []StringList, targetName string) []string {
 }
 
 func stringToReplacedList(info BuildInfo, str string) ([]string, error) {
-	sl := strings.Split(str, " ")
-	for i, s := range sl {
+	result := strings.Split(str, " ")
+	work := result[:0]
+	for _, s := range result {
 		expanded, err := info.Interpolate(s)
 		if err != nil {
 			return []string{}, err
 		}
-		sl[i] = expanded
+		work = append(work, expanded)
 	}
-	return sl, nil
+	return result, nil
 }
 
 //
@@ -1027,7 +1028,7 @@ func Exists(filename string) bool {
 func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Other) error {
 	optPrefix := info.OptionPrefix()
 	for _, ot := range others {
-		if ! ot.MatchPlatform(option.platform) {
+		if !ot.MatchPlatform(option.platform) {
 			continue
 		}
 
