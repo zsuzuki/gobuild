@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
@@ -151,11 +152,53 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 
 // Variable make.yml variable section
 type Variable struct {
-	Name   string
-	Value  string
-	Type   PlatformId
-	Target string
-	Build  string
+	Name     string
+	Value    string
+	Platform PlatformId `yaml:"type,flow"`
+	Target   string
+	Build    string
+}
+
+// MatchPlatform checks supplied platform `s` is matched or not.
+func (v *Variable) MatchPlatform(s string) bool {
+	p := v.Platform.String()
+	return len(p) == 0 || p == s
+}
+
+// GetMatchedValue returns the value of this variable if conditions met.
+func (v *Variable) GetMatchedValue(target string, platform string, variant string) (result string, ok bool) {
+	if !v.MatchPlatform(platform) {
+		return
+	}
+	if 0 < len(v.Target) && v.Target != target {
+		return
+	}
+	if 0 < len(v.Build) {
+		bld := strings.ToLower(v.Build)
+		switch variant {
+		case Debug.String():
+			if bld != "debug" {
+				return
+			}
+		case Release.String():
+			if bld != "release" {
+				return
+			}
+		case Develop.String():
+			if bld != "develop" {
+				return
+			}
+		case DevelopRelease.String():
+			if bld != "develop_release" {
+				return
+			}
+		case Product.String():
+			if bld != "product" {
+				return
+			}
+		}
+	}
+	return v.Value, true
 }
 
 // Build in directory source list

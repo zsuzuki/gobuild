@@ -31,7 +31,7 @@ const (
 
 var (
 	option struct {
-		targetType   string
+		platform     string
 		targetName   string
 		outputDir    string
 		outputRoot   string
@@ -89,7 +89,7 @@ func main() {
 	flag.BoolVar(&isDevelop, "develop", false, "develop(beta) build")
 	flag.BoolVar(&isDevelopRelease, "develop_release", false, "develop(beta) release build")
 	flag.BoolVar(&isProduct, "product", false, "for production build")
-	flag.StringVar(&option.targetType, "type", "default", "build target type")
+	flag.StringVar(&option.platform, "type", "default", "target platform type")
 	flag.StringVar(&option.targetName, "t", "", "build target name")
 	flag.StringVar(&option.outputRoot, "o", "build", "build directory")
 	flag.StringVar(&option.ninjaFile, "f", "build.ninja", "output build.ninja filename")
@@ -224,8 +224,8 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 	info.selectedTarget = ""
 
-	if level == 0 && option.targetType == "default" {
-		option.targetType = checkType(conf.Variable)
+	if level == 0 && option.platform == "default" {
+		option.platform = checkPlatformType(conf.Variable)
 	}
 
 	// Merge variable definitions (parent + current).
@@ -239,7 +239,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	})()
 
 	for _, v := range conf.Variable {
-		if val, ok := v.getValue(&info); ok {
+		if val, ok := v.GetMatchedValue(info.target, option.platform, option.variant); ok {
 			switch v.Name {
 			case "enable_response":
 				useResponse = ToBoolean(val)
@@ -259,15 +259,15 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	if level == 0 {
 		switch option.variant {
 		case Product.String():
-			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Product")
+			option.outputDir = JoinPaths(option.outputRoot, option.platform, "Product")
 		case Develop.String():
-			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Develop")
+			option.outputDir = JoinPaths(option.outputRoot, option.platform, "Develop")
 		case DevelopRelease.String():
-			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "DevelopRelease")
+			option.outputDir = JoinPaths(option.outputRoot, option.platform, "DevelopRelease")
 		case Release.String():
-			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Release")
+			option.outputDir = JoinPaths(option.outputRoot, option.platform, "Release")
 		default:
-			option.outputDir = JoinPaths(option.outputRoot, option.targetType, "Debug")
+			option.outputDir = JoinPaths(option.outputRoot, option.platform, "Debug")
 		}
 	}
 
@@ -465,7 +465,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 func getList(block []StringList, targetName string) []string {
 	lists := make([]string, 0, len(block))
 	for _, item := range block {
-		if item.Match(targetName, option.targetType) {
+		if item.Match(targetName, option.platform) {
 			appender := func(key interface{}) {
 				if l := item.Items(key); l != nil {
 					lists = append(lists, *l...)
@@ -518,7 +518,7 @@ func makeArchiveCommand(info BuildInfo, inputs []string, targetName string) (*Bu
 		Args:        info.archiveOptions,
 		InFiles:     inputs,
 		OutFile: (func() string {
-			switch option.targetType {
+			switch option.platform {
 			case "WIN32":
 				return JoinPaths(info.outputdir, targetName+".lib")
 			default:
@@ -719,7 +719,7 @@ func FixupCommandPath(command string, commandDir string) (commandLine string, co
 func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([]*BuildCommand, error) {
 	result := make([]*BuildCommand, 0)
 	for _, build := range buildItems {
-		if !build.Match(info.target, option.targetType) {
+		if !build.Match(info.target, option.platform) {
 			continue
 		}
 
@@ -1027,7 +1027,7 @@ func Exists(filename string) bool {
 func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Other) error {
 	optPrefix := info.OptionPrefix()
 	for _, ot := range others {
-		if 0 < len(ot.Type) && ot.Type.String() != option.targetType {
+		if 0 < len(ot.Type) && ot.Type.String() != option.platform {
 			continue
 		}
 
@@ -1089,7 +1089,7 @@ func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Oth
 	return nil
 }
 
-func checkType(vlist []Variable) string {
+func checkPlatformType(vlist []Variable) string {
 	for _, v := range vlist {
 		if v.Name == "default_type" {
 			return v.Value
@@ -1144,7 +1144,7 @@ func outputNinja() error {
 	}
 	ctx := WriteContext{
 		TemplateFile:       option.templateFile,
-		Platform:           option.targetType,
+		Platform:           option.platform,
 		UseResponse:        useResponse,
 		NewlineAsDelimiter: responseNewline,
 		GroupArchives:      groupArchives,
@@ -1462,41 +1462,6 @@ func ToBoolean(s string) bool {
 	}
 	Warn("Ambiguous boolean \"%s\" found", s)
 	return false
-}
-
-func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
-	if 0 < len(v.Type) && v.Type.String() != option.targetType {
-		return
-	}
-	if 0 < len(v.Target) && v.Target != info.target {
-		return
-	}
-	if 0 < len(v.Build) {
-		bld := strings.ToLower(v.Build)
-		switch option.variant {
-		case Debug.String():
-			if bld != "debug" {
-				return
-			}
-		case Release.String():
-			if bld != "release" {
-				return
-			}
-		case Develop.String():
-			if bld != "develop" {
-				return
-			}
-		case DevelopRelease.String():
-			if bld != "develop_release" {
-				return
-			}
-		case Product.String():
-			if bld != "product" {
-				return
-			}
-		}
-	}
-	return v.Value, true
 }
 
 // Obtains executable path if possible.

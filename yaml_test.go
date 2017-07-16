@@ -6,6 +6,10 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/leanovate/gopter/arbitrary"
+	"github.com/leanovate/gopter/convey"
+	"github.com/leanovate/gopter/gen"
+
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -154,3 +158,50 @@ list:
 		})
 	})
 }
+
+func TestVariable(t *testing.T) {
+	arbitraries := arbitrary.DefaultArbitraries()
+	arbitraries.RegisterGen(gen.Identifier().Map(func(arg interface{}) PlatformId {
+		v := arg.(string)
+		return PlatformId(v)
+	}))
+	condition := func(name string, value string, platform PlatformId, target string, build string) bool {
+		v := Variable{
+			Name:     name,
+			Value:    value,
+			Platform: platform,
+			Target:   target,
+			Build:    build,
+		}
+		b, err := yaml.Marshal(&v)
+		if err != nil {
+			t.Logf("%v", err)
+			return false
+		}
+		var vv Variable
+		err = yaml.Unmarshal(b, &vv)
+		if err != nil {
+			t.Logf("%v", err)
+			return false
+		}
+		//t.Logf("Platform: %s", vv.Platform.String())
+		return v == vv
+	}
+	Convey(`Marshal then Unmarshal should return to original`, t, func() {
+		So(condition, convey.ShouldSucceedForAll, arbitraries)
+	})
+}
+
+//func TestIntParse(t *testing.T) {
+//  properties := gopter.NewProperties(nil)
+//  arbitraries := arbitrary.DefaultArbitraries()
+//
+//  properties.Property("printed integers can be parsed", arbitraries.ForAll(
+//		func(a int64) bool {
+//			str := fmt.Sprintf("%d", a)
+//			parsed, err := strconv.ParseInt(str, 10, 64)
+//			return err == nil && parsed == a
+//		}))
+//
+//  properties.TestingRun(t)
+//}
