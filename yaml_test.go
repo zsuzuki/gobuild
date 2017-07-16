@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	platformMac     PlatformId = "Mac"
-	platformWindows PlatformId = "WIN"
-	platformLinux   PlatformId = "LINUX"
+	platformMac     PlatformID = "Mac"
+	platformWindows PlatformID = "WIN"
+	platformLinux   PlatformID = "LINUX"
 )
 
 func TestUnmarshalStringList(t *testing.T) {
@@ -127,7 +127,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be ["Mac"]`, func() {
-						So(slist.Types(), ShouldResemble, []PlatformId{platformMac})
+						So(slist.Types(), ShouldResemble, []PlatformID{platformMac})
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
@@ -148,7 +148,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be ["Mac", "WIN", "LINUX"]`, func() {
-						So(slist.Types(), ShouldResemble, []PlatformId{platformMac, platformWindows, platformLinux})
+						So(slist.Types(), ShouldResemble, []PlatformID{platformMac, platformWindows, platformLinux})
 					})
 					Convey(`AND THEN: list should be ["item1-2", "dummy-2"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1-2", "dummy-2"})
@@ -161,31 +161,39 @@ list:
 
 func TestVariable(t *testing.T) {
 	arbitraries := arbitrary.DefaultArbitraries()
-	arbitraries.RegisterGen(gen.Identifier().Map(func(arg interface{}) PlatformId {
+	arbitraries.RegisterGen(gen.Identifier().Map(func(arg interface{}) PlatformID {
 		v := arg.(string)
-		return PlatformId(v)
+		return PlatformID(v)
 	}))
-	condition := func(name string, value string, platform PlatformId, target string, build string) bool {
+	arbitraries.RegisterGen(gen.SliceOf(gen.Identifier()).Map(func(arg interface{}) map[PlatformID]bool {
+		result := make(map[PlatformID]bool)
+		for _, v := range arg.([]string) {
+			result[PlatformID(v)] = true
+		}
+		return result
+	}))
+	condition := func(name string, value string, platforms map[PlatformID]bool, target string, build string) bool {
 		v := Variable{
-			Name:     name,
-			Value:    value,
-			Platform: platform,
-			Target:   target,
-			Build:    build,
+			Name:      name,
+			Value:     value,
+			platforms: platforms,
+			Target:    target,
+			Build:     build,
 		}
 		b, err := yaml.Marshal(&v)
 		if err != nil {
 			t.Logf("%v", err)
 			return false
 		}
+		// t.Logf("%s\n", string(b))
 		var vv Variable
 		err = yaml.Unmarshal(b, &vv)
 		if err != nil {
 			t.Logf("%v", err)
 			return false
 		}
-		//t.Logf("Platform: %s", vv.Platform.String())
-		return v == vv
+		//t.Logf("Platform: %v", vv.platforms)
+		return v.Equals(&vv)
 	}
 	Convey(`Marshal then Unmarshal should return to original`, t, func() {
 		So(condition, convey.ShouldSucceedForAll, arbitraries)

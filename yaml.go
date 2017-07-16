@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"strings"
 
+	"sort"
+
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
 
-// PlatformId represents target platform
-type PlatformId string
+// PlatformID represents target platform
+type PlatformID string
 
-// String retrieves the string representation of PlatformId
-func (p PlatformId) String() string {
+// String retrieves the string representation of PlatformID
+func (p PlatformID) String() string {
 	return string(p)
 }
 
@@ -58,12 +60,12 @@ type Packager struct {
 type StringList struct {
 	// Target selector
 	Target string
-	types  []PlatformId
+	types  []PlatformID
 	items  map[string](*[]string)
 }
 
 // Types retrieves list of target types.
-func (s *StringList) Types() []PlatformId {
+func (s *StringList) Types() []PlatformID {
 	return s.types
 }
 
@@ -120,7 +122,7 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	}
 	err := unmarshaler(&fixedSlot)
 	if err != nil {
-		return errors.Wrapf(err, "unmarshaling failed on `StringList` fixed slot")
+		return errors.Wrapf(err, "unmarshaling failed on `StringList` fixed slots")
 	}
 	var items map[string]*[]string
 	err = unmarshaler(&items)
@@ -131,14 +133,14 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	}
 	switch v := fixedSlot.Types.(type) {
 	case string:
-		s.types = []PlatformId{PlatformId(v)}
+		s.types = []PlatformID{PlatformID(v)}
 	case []interface{}:
 		for _, t := range v {
 			item, ok := t.(string)
 			if !ok {
 				return errors.Errorf("Unexpected item type %v", t)
 			}
-			s.types = append(s.types, PlatformId(item))
+			s.types = append(s.types, PlatformID(item))
 		}
 	case nil:
 		/*NO-OP*/
@@ -152,17 +154,115 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 
 // Variable make.yml variable section
 type Variable struct {
-	Name     string
-	Value    string
-	Platform PlatformId `yaml:"type,flow"`
-	Target   string
-	Build    string
+	Name      string
+	Value     string
+	platforms map[PlatformID]bool
+	Target    string
+	Build     string
+}
+
+// Equals checks v == other.
+func (v *Variable) Equals(other *Variable) bool {
+	if v.Name != other.Name ||
+		v.Value != other.Value ||
+		v.Target != other.Target ||
+		v.Build != other.Build ||
+		len(v.platforms) != len(other.platforms) {
+		return false
+	}
+	for key, val := range v.platforms {
+		if oVal, ok := other.platforms[key]; !ok || val != oVal {
+			return false
+		}
+	}
+	return true
+}
+
+// Platforms retrieves associated PlatformIDs.
+func (v *Variable) Platforms() []PlatformID {
+	result := make([]PlatformID, 0, len(v.platforms))
+	for key := range v.platforms {
+		result = append(result, PlatformID(key))
+	}
+	sort.Slice(result, func(i int, j int) bool {
+		return result[i].String() < result[j].String()
+	})
+	return result
+}
+
+// MarshalYAML is called while yaml.Marshal (for custom marshaling).
+func (v *Variable) MarshalYAML() (interface{}, error) {
+	var result struct {
+		Name      string
+		Value     string
+		Target    string
+		Build     string
+		Platforms interface{} `yaml:"type,flow,omitempty"`
+	}
+	result.Name = v.Name
+	result.Value = v.Value
+	result.Target = v.Target
+	result.Build = v.Build
+	p := make([]string, 0, len(v.platforms))
+	for key := range v.platforms {
+		p = append(p, string(key))
+	}
+	sort.Strings(p)
+	switch len(p) {
+	case 0:
+		result.Platforms = nil
+	case 1:
+		result.Platforms = p[0]
+	default:
+		result.Platforms = p
+	}
+	return result, nil
+}
+
+// UnmarshalYAML is called while yaml.Unmarshal (for custom unmarshaing).
+func (v *Variable) UnmarshalYAML(unmarshaler func(interface{}) error) error {
+	var err error
+
+	var slots struct {
+		Name      string
+		Value     string
+		Target    string
+		Build     string
+		Platforms interface{} `yaml:"type"`
+	}
+	err = unmarshaler(&slots)
+	if err != nil {
+		return errors.Wrapf(err, "unmarshaling failed on `Variable` fixed slots")
+	}
+	v.Name = slots.Name
+	v.Value = slots.Value
+	v.Target = slots.Target
+	v.Build = slots.Build
+	v.platforms = make(map[PlatformID]bool)
+	switch val := slots.Platforms.(type) {
+	case string:
+		v.platforms[PlatformID(val)] = true
+	case []interface{}:
+		for _, t := range val {
+			v.platforms[PlatformID(t.(string))] = true
+		}
+	case nil:
+		/* NO-OP */
+	default:
+		panic(fmt.Sprintf("type: %v", v))
+	}
+	return nil
 }
 
 // MatchPlatform checks supplied platform `s` is matched or not.
-func (v *Variable) MatchPlatform(s string) bool {
-	p := v.Platform.String()
-	return len(p) == 0 || p == s
+func (v *Variable) MatchPlatform(platform string) bool {
+	if len(v.platforms) == 0 {
+		return true
+	}
+	if _, ok := v.platforms[PlatformID(platform)]; ok {
+		return true
+	}
+	return false
 }
 
 // GetMatchedValue returns the value of this variable if conditions met.
@@ -202,11 +302,12 @@ func (v *Variable) GetMatchedValue(target string, platform string, variant strin
 }
 
 // Build in directory source list
+// Build describes
 type Build struct {
 	Name    string
 	Command string
 	Target  string
-	Type    PlatformId
+	Type    PlatformID
 	Deps    string
 	Source  []StringList `yaml:",flow"`
 }
@@ -227,6 +328,6 @@ type Other struct {
 	Command     string
 	Description string
 	NeedDepend  bool `yaml:"need_depend"`
-	Type        PlatformId
+	Type        PlatformID
 	Option      []StringList `yaml:",flow"`
 }
