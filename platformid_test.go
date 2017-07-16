@@ -19,7 +19,7 @@ func TestPlatformID_Simple(t *testing.T) {
 			tmp.Add("def")
 			Convey(`AND WHEN: Marshal it`, func() {
 				b, err := yaml.Marshal(&tmp)
-				t.Logf("b = %s", string(b))
+				// t.Logf("b = %s", string(b))
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND WHEN: Unmarshal it`, func() {
@@ -58,7 +58,7 @@ func TestPlatformIDSet_MarshalThenUnmarshal(t *testing.T) {
 			t.Logf("%v", err)
 			return false
 		}
-		t.Logf(string(b))
+		//t.Logf(string(b))
 		var vv PlatformIDSet
 		err = yaml.Unmarshal(b, &vv)
 		if err != nil {
