@@ -59,8 +59,10 @@ var (
 		headerFiles []string
 	}
 
+	// ProgramPath holds path to the invoked program.
+	ProgramPath = getExecutablePath("cbuild")
 	// ProgramName holds invoked program name.
-	ProgramName = getExecutableName("cbuild")
+	ProgramName = "cbuild"
 
 	rxTruthy = regexp.MustCompile(`^\s*(?i:t(?:rue)?|y(?:es)?|on|1)(?:\s+.*)?$`)
 	rxFalsy  = regexp.MustCompile(`^\s*(?i:f(?:alse)?|no?|off|0)(?:\s+.*)?$`)
@@ -68,6 +70,7 @@ var (
 
 // The entry point.
 func main() {
+	ProgramName = filepath.Base(ProgramPath)
 	var (
 		isDebug          bool
 		isRelease        bool
@@ -825,7 +828,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 // Accepts both `.EXT` and `EXT` as a new extension.
 func ReplaceExtension(path string, ext string) string {
 	result := filepath.Base(path)
-	if ! strings.HasPrefix(ext,".") {
+	if !strings.HasPrefix(ext, ".") {
 		ext = "." + ext
 	}
 	e := filepath.Ext(path)
@@ -1496,8 +1499,8 @@ func (v *Variable) getValue(info *BuildInfo) (result string, ok bool) {
 	return v.Value, true
 }
 
-// Obtains executable name if possible.
-func getExecutableName(defaultName string) string {
+// Obtains executable path if possible.
+func getExecutablePath(defaultName string) string {
 	if n, err := os.Executable(); err == nil {
 		return filepath.ToSlash(n)
 	}
