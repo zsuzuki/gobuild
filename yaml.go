@@ -3,9 +3,8 @@ package main
 
 import (
 	"fmt"
-	"strings"
-
 	"sort"
+	"strings"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
@@ -17,6 +16,88 @@ type PlatformID string
 // String retrieves the string representation of PlatformID
 func (p PlatformID) String() string {
 	return string(p)
+}
+
+// PlatformIDSet is a set of PlatformIDs.
+type PlatformIDSet struct {
+	set map[string]bool
+}
+
+// NewPlatformIDSet constructs a fresh PlatformIDSet structure.
+func NewPlatformIDSet() *PlatformIDSet {
+	result := new(PlatformIDSet)
+	result.set = make(map[string]bool)
+	return result
+}
+
+// Contains returns true if `id` is in the set.
+func (ps *PlatformIDSet) Contains(id interface{}) bool {
+	var ok bool
+	switch v := id.(type) {
+	case string:
+		_, ok = ps.set[v]
+	case fmt.Stringer:
+		_, ok = ps.set[v.String()]
+	default:
+		panic("failed to convert id into PlatformID")
+	}
+	return ok
+}
+
+// Add adds `id` to set.
+func (ps *PlatformIDSet) Add(id PlatformID) *PlatformIDSet {
+	ps.set[string(id)] = true
+	return ps
+}
+
+// Equals checks the equality of two `PlatformIDSet`s.
+func (ps *PlatformIDSet) Equals(other PlatformIDSet) bool {
+	if len(ps.set) != len(other.set) {
+		return false
+	}
+	for k := range ps.set {
+		if _, ok := other.set[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// MarshalYAML is called while marshaling PlatformIDSet.
+func (ps *PlatformIDSet) MarshalYAML() (interface{}, error) {
+	if len(ps.set) == 0 {
+		return []string{}, nil
+	}
+	result := make([]string, 0, len(ps.set))
+	for k := range ps.set {
+		result = append(result, string(k))
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+// UnmarshalYAML is called while unmarshaling PlatformIDSet.
+func (ps *PlatformIDSet) UnmarshalYAML(unmarshaler func(interface{}) error) error {
+	var ids interface{}
+	//panic ("*** OOPS ***")
+	err := unmarshaler(&ids)
+	if err != nil {
+		errors.Wrapf(err, "failed to unmarshal PlatformIDSet")
+	}
+	ps.set = make(map[string]bool)
+	switch v := ids.(type) {
+	case string:
+		ps.set[v] = true
+	case []interface{}:
+		for _, val := range v {
+			ps.set[val.(string)] = true
+		}
+	case nil:
+		/* NO-OP */
+	default:
+		return errors.Errorf("unexpected type %v found", v)
+	}
+	return nil
 }
 
 // Data format make.yml top structure
