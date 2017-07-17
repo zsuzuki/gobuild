@@ -1101,7 +1101,8 @@ func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Oth
 				needInclude: needInclude,
 				needOption:  needOption,
 				needDefine:  needDefine,
-				NeedDepend:  ot.NeedDepend}
+				NeedDepend:  ot.NeedDepend,
+			}
 		}
 		(*dict)[ext] = rule
 	}
@@ -1134,8 +1135,10 @@ func outputNinja() error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to create temporal output \"%s\"", tPath.TempOutput)
 	}
-	defer file.Close()
-	defer tPath.Abort()
+	defer (func() {
+		_ = file.Close()
+		_ = tPath.Abort()
+	})()
 	Verbose("%s: Creating transient output \"%s\"\n", ProgramName, tPath.TempOutput)
 	sink := bufio.NewWriter(file)
 
@@ -1375,8 +1378,7 @@ subninja {{$subninja}}
 
 // Creates *.vcxproj (for VisualStudio).
 func outputMSBuild(outdir, projname string) error {
-	var targets []string
-
+	targets := make([]string, 0, len(emitContext.commandList)+len(project.headerFiles))
 	for _, command := range emitContext.commandList {
 		if command.CommandType != "compile" {
 			continue
@@ -1401,7 +1403,7 @@ func outputCompileDb() error {
 		}
 	}
 	outPath := filepath.Join(option.outputDir, "compile_commands.json")
-	var items []CompileDbItem
+	items := make([]CompileDbItem, 0, len(emitContext.commandList))
 	for _, c := range emitContext.commandList {
 		if c.CommandType != "compile" || len(c.Args) == 0 {
 			continue
@@ -1414,13 +1416,14 @@ func outputCompileDb() error {
 		args = append(args, c.Command)
 		args = append(args, c.Args...)
 		args = append(args, "-o", c.OutFile, infile)
-		item := CompileDbItem{
-			File:      infile,
-			Directory: ninjaDir,
-			Output:    c.OutFile,
-			Arguments: args,
-		}
-		items = append(items, item)
+		items = append(
+			items,
+			CompileDbItem{
+				File:      infile,
+				Directory: ninjaDir,
+				Output:    c.OutFile,
+				Arguments: args,
+			})
 	}
 	return CreateCompileDbFile(outPath, items)
 }
