@@ -226,6 +226,7 @@ type Other struct {
 	Option      []StringList   `yaml:"option,flow"`
 }
 
+// MatchPlatform checks `platform` is in the set or not.
 func (o *Other) MatchPlatform(platform string) bool {
 	if o.Platforms == nil {
 		return true
