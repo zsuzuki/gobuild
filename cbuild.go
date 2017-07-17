@@ -186,6 +186,7 @@ func CollectConfigurations(info BuildInfo, relChildDir string) (*[]string, error
 }
 
 func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) {
+	var err error
 	if !strings.HasSuffix(relChildDir, "/") {
 		return nil, errors.New("output directory should end with '/'")
 	}
@@ -203,7 +204,8 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 		return nil, errors.Wrapf(err, "failed to unmarshal \"%s\"", yamlSource)
 	}
 	{
-		absPath, err := filepath.Abs(yamlSource)
+		var absPath string
+		absPath, err = filepath.Abs(yamlSource)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to convert \"%s\" to absolute path", yamlSource)
 		}
@@ -344,7 +346,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 
 	// Constructs header files.
 	for _, h := range getList(conf.Headers, info.target) {
-		h, err := info.StrictInterpolate(h)
+		h, err = info.StrictInterpolate(h)
 		if err != nil {
 			return nil, err
 		}
@@ -369,7 +371,8 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	for _, s := range subdirs {
 		// relChildDir always ends with '/'
 		odir := relChildDir + filepath.ToSlash(filepath.Clean(s)) + "/"
-		if r, err := traverse(info, odir, level+1); err == nil {
+		var r *[]string
+		if r, err = traverse(info, odir, level+1); err == nil {
 			if 0 < len(*r) {
 				subArtifacts = append(subArtifacts, *r...)
 			}
@@ -534,7 +537,14 @@ func makeArchiveCommand(info BuildInfo, inputs []string, targetName string) (*Bu
 //
 // link objects
 //
-func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string, packager Packager) ([]*BuildCommand, error) {
+func makeLinkCommand(
+	info BuildInfo,
+	sourceArtifacts []string,
+	targetName string,
+	packager Packager) ([]*BuildCommand, error) {
+
+	var err error
+
 	result := make([]*BuildCommand, 0, 1)
 	targetPath := JoinPaths(info.MakeExecutablePath(targetName))
 
@@ -566,11 +576,16 @@ func makeLinkCommand(info BuildInfo, sourceArtifacts []string, targetName string
 	if 0 < len(packager.Target) {
 		// package
 		pkgname := JoinPaths(option.outputDir, targetName, packager.Target)
-		pkgr, err := info.ExpandVariable("packager")
+		var (
+			pkgr  string
+			pargs []string
+		)
+
+		pkgr, err = info.ExpandVariable("packager")
 		if err != nil {
 			return result, err
 		}
-		pargs, err := stringToReplacedList(info, packager.Option)
+		pargs, err = stringToReplacedList(info, packager.Option)
 		if err != nil {
 			return result, err
 		}
@@ -634,6 +649,9 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 	for _, f := range inputs {
 		// first, compile a test driver
 		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to construct a commmand")
+		}
 		result = append(result, objcmds...)
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
 		cmds, err := makeLinkCommand(
@@ -1122,20 +1140,23 @@ func outputNinja() error {
 	sink := bufio.NewWriter(file)
 
 	tmpl, err := getNinjaTemplate(option.templateFile)
+	if err != nil {
+		return errors.Wrapf(err, "failed to obtain a template")
+	}
 
 	// Emits rules for updating `build.ninja`
 	type WriteContext struct {
 		TemplateFile       string
 		Platform           string
-		UseResponse        bool
-		NewlineAsDelimiter bool
-		GroupArchives      bool
 		OutputDirectory    string
 		OtherRules         map[string]OtherRule
 		AppendRules        map[string]AppendBuild
+		NinjaUpdater       string
 		UsePCH             bool
 		UseDepsMsvc        bool
-		NinjaUpdater       string
+		UseResponse        bool
+		NewlineAsDelimiter bool
+		GroupArchives      bool
 
 		Commands         []*BuildCommand
 		OtherRuleTargets []OtherRuleFile
