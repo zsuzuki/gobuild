@@ -825,7 +825,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 			// Found `$...` -> extension specific rules.
 			ext := build.Name[1:]
 			for _, src := range sources {
-				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", ReplaceExtension(src, ext)))
+				outfile, _ := filepath.Abs(filepath.Join(info.outputdir, "output", Basename(src, filepath.Ext(src))+ext))
 				outfile = JoinPaths(outfile)
 				cmd := BuildCommand{
 					Command:          build.Command,
@@ -1186,6 +1186,9 @@ func outputNinja() error {
 		NinjaFile        string
 		ConfigSources    []string
 	}
+	osArgs := make([]string, 0, len(os.Args))
+	osArgs = append(osArgs, filepath.ToSlash(os.Args[0]))
+	osArgs = append(osArgs, os.Args[1:]...)
 	ctx := WriteContext{
 		TemplateFile:       option.templateFile,
 		Platform:           option.platform,
@@ -1197,7 +1200,7 @@ func outputNinja() error {
 		AppendRules:        emitContext.appendRules,
 		UsePCH:             true,
 		UseDepsMsvc:        useDepsMsvc,
-		NinjaUpdater:       strings.Join(os.Args, " "),
+		NinjaUpdater:       strings.Join(osArgs, " "),
 
 		Commands:         emitContext.commandList,
 		OtherRuleTargets: emitContext.otherRuleFileList,
