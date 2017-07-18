@@ -857,6 +857,25 @@ func ReplaceExtension(path string, ext string) string {
 	return result + ext
 }
 
+// Basename obtains the basename of the `path`
+// If called as `Basename ("foo.bar", ".bar")`, Basename returns "foo" (strip matched extension)
+func Basename(path string, args ...string) string {
+	p := filepath.Base(path)
+	if len(args) == 0 {
+		return p
+	}
+	ext := args[0]
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	e := filepath.Ext(p)
+	if e == ext {
+		// Extension matched, trim it.
+		return p[:len(p)-len(e)]
+	}
+	return p
+}
+
 // Build command for compiling C, C++...
 func makeCompileCommands(
 	info BuildInfo,
