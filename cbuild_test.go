@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"path/filepath"
+
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/convey"
 	"github.com/leanovate/gopter/gen"
@@ -113,7 +115,8 @@ func TestReplaceExtension(t *testing.T) {
 	}
 	genBase := gopter.CombineGens(
 		gen.Identifier(),
-		gen.OneConstOf("", ".")).FlatMap(
+		gen.OneConstOf("", "."),
+	).FlatMap(
 		func(arg interface{}) gopter.Gen {
 			args := arg.([]interface{})
 			a0 := args[0].(string)
@@ -122,13 +125,76 @@ func TestReplaceExtension(t *testing.T) {
 		},
 		reflect.TypeOf(""),
 	)
-	genExt := gen.Identifier()
 	Convey(`Replace extention twice should match the original`, t, func() {
 		So(condition, convey.ShouldSucceedForAll,
 			genBase.WithLabel("base"),
-			genExt.WithLabel("old"),
-			genExt.WithLabel("new"))
+			genPathComponent(false).WithLabel("old"),
+			genPathComponent(false).WithLabel("new"))
 	})
+}
+
+func TestBasename(t *testing.T) {
+	Convey(`Basename ("foo.bar", "bar") == "foo"`, t, func() {
+		condition := func(dir string, path string, ext string) bool {
+			fullpath := filepath.Join(dir, fmt.Sprintf("%s.%s", path, ext))
+			//t.Logf("fullpath = %s", fullpath)
+			p := Basename(fullpath, ext)
+			return p == path
+		}
+		So(condition,
+			convey.ShouldSucceedForAll,
+			genPath().WithLabel("dir"),
+			genPathComponent(true).WithLabel("stem"),
+			genPathComponent(false).WithLabel("ext"))
+	})
+}
+
+func genPath() gopter.Gen {
+	pathGen := gen.SliceOf(genPathComponent(true)).Map(func(args []string) string {
+		path := make([]string, 0, len(args))
+		for _, p := range args {
+			path = append(path, p)
+		}
+		return filepath.Join(path...)
+	})
+	return gopter.CombineGens(genVolume(), pathGen).Map(func(args interface{}) string {
+		av := args.([]interface{})
+		return filepath.Join(av[0].(string), av[1].(string))
+	})
+}
+
+func genPathComponent(containsDot bool) gopter.Gen {
+	elementGen := gen.OneGenOf(
+		gen.AlphaNumChar(),
+		gen.RuneRange(0x20, 0x40),
+	).SuchThat(func(arg interface{}) bool {
+		ch := arg.(rune)
+		if ch == '\\' || ch == '/' || ch == ':' {
+			return false
+		}
+		if !containsDot && ch == '.' {
+			return false
+		}
+		return true
+	})
+	runeToString := func(r []rune) string {
+		return string(r)
+	}
+	return gen.SliceOf(elementGen).Map(runeToString).SuchThat(func(arg string) bool { return 0 < len(arg) })
+}
+
+func genVolume() gopter.Gen {
+	genDrive := gen.AlphaUpperChar().Map(func(arg interface{}) string {
+		ch := arg.(rune)
+		return fmt.Sprintf("%c:", ch)
+	}).WithLabel("drive")
+	genShare := gopter.CombineGens(gen.Identifier(), gen.Identifier()).Map(func(args interface{}) string {
+		a := args.([]interface{})
+		a0 := a[0].(string)
+		a1 := a[1].(string)
+		return fmt.Sprintf(`\\%s\%s`, a0, a1)
+	}).WithLabel("share")
+	return gen.OneGenOf(genDrive, genShare)
 }
 
 // To replace `.txt` to `.bin`
@@ -136,4 +202,12 @@ func ExampleReplaceExtension() {
 	const f = "foo.bar.txt"
 	fmt.Println(ReplaceExtension(f, ".bin"))
 	// Output: foo.bar.bin
+}
+
+func ExampleBasename() {
+	const f = "foo/bar/baz.qux"
+	fmt.Println(Basename(f))
+	fmt.Println(Basename(f, "qux"))
+	// Output: baz.qux
+	//         baz
 }
