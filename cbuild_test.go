@@ -208,6 +208,7 @@ func ExampleBasename() {
 	const f = "foo/bar/baz.qux"
 	fmt.Println(Basename(f))
 	fmt.Println(Basename(f, "qux"))
-	// Output: baz.qux
-	//         baz
+	// Output:
+	// baz.qux
+	// baz
 }
