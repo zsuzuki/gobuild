@@ -10,6 +10,7 @@ Following properties/functions are available:
     - OtherRules         map[string]OtherRule   // extension to rule map
     - AppendRules        map[string]AppendBuild // custom build rules to command map
     - UsePCH             bool       // Prefer using pre-compiled header
+    - UseDepsMsvc        bool       // Use MSVC depend format
     - NinjaUpdater       string     // Command for updating *.ninja itself
     - Commands         []*BuildCommand  // List of build commands
     - OtherRuleTargets []OtherRuleFile  // List of targets using custom rules
@@ -28,7 +29,11 @@ rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
     command = $compile $options -Fo$out $in
+    {{- if eq .UseDepsMsvc}}
     deps = msvc
+    {{- else}}
+    deps = gcc
+    {{- end}}
 {{- else}}
     command = $compile $options -o $out $in
     depfile = $depf

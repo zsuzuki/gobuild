@@ -44,6 +44,7 @@ var (
 	useResponse     bool
 	groupArchives   bool
 	responseNewline bool
+	useDepsMsvc     bool
 
 	emitContext struct {
 		subNinjaList      []string
@@ -132,6 +133,7 @@ func cbuild(projdir string, projname string, genMSBuild bool) error {
 	useResponse = false
 	groupArchives = false
 	responseNewline = false
+	useDepsMsvc = false
 	if 0 < flag.NArg() && len(option.targetName) == 0 {
 		option.targetName = flag.Arg(0)
 	}
@@ -242,6 +244,8 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 				responseNewline = ToBoolean(val)
 			case "group_archives":
 				groupArchives = ToBoolean(val)
+			case "deps_msvc":
+				useDepsMsvc = ToBoolean(val)
 			default: /* NO-OP */
 			}
 			info.variables[v.Name] = val
@@ -1122,6 +1126,7 @@ func outputNinja() error {
 		OtherRules         map[string]OtherRule
 		AppendRules        map[string]AppendBuild
 		UsePCH             bool
+		UseDepsMsvc        bool
 		NinjaUpdater       string
 
 		Commands         []*BuildCommand
@@ -1140,6 +1145,7 @@ func outputNinja() error {
 		OtherRules:         emitContext.otherRuleList,
 		AppendRules:        emitContext.appendRules,
 		UsePCH:             true,
+		UseDepsMsvc:        useDepsMsvc,
 		NinjaUpdater:       strings.Join(os.Args, " "),
 
 		Commands:         emitContext.commandList,
@@ -1208,7 +1214,12 @@ rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
     command = $compile $options -Fo$out $in
-    deps = msvc
+	{{- if .UseDepsMsvc}}
+	deps = msvc
+	{{- else}}
+	depfile = $depf
+	deps = gcc
+	{{- end}}
 {{- else}}
     command = $compile $options -o $out $in
     depfile = $depf
@@ -1300,6 +1311,7 @@ build {{$c.OutFile}} : {{$c.CommandType}} {{join $c.InFiles " "}} {{join $c.Depe
 {{- end}}
 {{- if $c.DepFile}}
     depf = {{$c.DepFile}}
+    deps = gcc
 {{- end}}
 {{- if $c.Args}}
     options = {{join $c.Args " "}}
