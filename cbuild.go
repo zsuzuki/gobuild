@@ -1214,12 +1214,12 @@ rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
     command = $compile $options -Fo$out $in
-	{{- if .UseDepsMsvc}}
-	deps = msvc
-	{{- else}}
-	depfile = $depf
-	deps = gcc
-	{{- end}}
+    {{- if .UseDepsMsvc}}
+    deps = msvc
+    {{- else}}
+    depfile = $depf
+    deps = gcc
+    {{- end}}
 {{- else}}
     command = $compile $options -o $out $in
     depfile = $depf
