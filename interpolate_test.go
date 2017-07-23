@@ -149,14 +149,13 @@ func TestStrictInterpolateErrors(t *testing.T) {
 			{"${mokeke}moke", UnknownReference},
 			{"${rec}", ExceedRecursionLimit}} {
 			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", tc.input), func() {
-				actual, err := StrictInterpolate(tc.input, dict)
+				_, err := StrictInterpolate(tc.input, dict)
 				Convey("THEN: Should cause an error", func() {
 					So(err, ShouldNotBeNil)
 					Convey(fmt.Sprintf("AND THEN: Should have %s error type", tc.err.String()), func() {
 						e, ok := err.(*InterpolationError)
 						So(ok, ShouldBeTrue)
 						So(e.Type, ShouldEqual, tc.err)
-						Printf("actual:\"%s\"\n", actual)
 					})
 				})
 			})
