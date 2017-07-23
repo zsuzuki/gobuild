@@ -79,26 +79,38 @@ func TestToBooleanUndefined(t *testing.T) {
 }
 
 func TestFixupCommandPath(t *testing.T) {
-	Convey("GIVEN: Test cases", t, func() {
-		cases := []struct {
-			arg1st    string
-			arg2nd    string
-			expect1st string
-			expect2nd string
-		}{
-			{"abc def ghi", "/usr/local", "/usr/local/abc def ghi", "/usr/local/abc"},
-			{"$abc def ghi", "/usr/local", "/usr/local/$abc def ghi", "/usr/local/$abc"},
+	Convey("GIVEN: A property", t, func() {
+		condition := func(a0 string, a1 string) bool {
+			args := strings.Split(a0, " ")
+			ea, eb := FixupCommandPath(a0, a1)
+			if filepath.ToSlash(filepath.Join(a1, args[0])) != filepath.ToSlash(eb) {
+				return false
+			}
+			if filepath.ToSlash(filepath.Join(a1, a0)) != filepath.ToSlash(ea) {
+				return false
+			}
+			return true
 		}
-
-		for _, c := range cases {
-			Convey(fmt.Sprintf(`WHEN: Evaluating FixupCommandPath("%s", "%s")`, c.arg1st, c.arg2nd), func() {
-				ea, eb := FixupCommandPath(c.arg1st, c.arg2nd)
-				Convey(fmt.Sprintf("THEN: Should be (\"%s\", \"%s\")", c.expect1st, c.expect2nd), func() {
-					So(ea, ShouldEqual, c.expect1st)
-					So(eb, ShouldEqual, c.expect2nd)
-				})
+		Convey("WHEN: Testing property", func() {
+			Convey("THEN: Should succeed for all cases", func() {
+				So(condition, convey.ShouldSucceedForAll,
+					gen.SliceOf(gen.Identifier()).
+						FlatMap(
+							func(arg interface{}) gopter.Gen {
+								args := arg.([]string)
+								args2 := make([]string, 0, len(args))
+								for _, t := range args {
+									args2 = append(args2, t)
+								}
+								if 0 < len(args2) {
+									args2[0] = "$" + args2[0]
+								}
+								return gen.OneConstOf(strings.Join(args, " "), strings.Join(args2, " "))
+							},
+							reflect.TypeOf("")).WithLabel("args"),
+					genPath().WithLabel("path"))
 			})
-		}
+		})
 	})
 }
 
@@ -151,15 +163,11 @@ func TestBasename(t *testing.T) {
 
 func genPath() gopter.Gen {
 	pathGen := gen.SliceOf(genPathComponent(true)).Map(func(args []string) string {
-		path := make([]string, 0, len(args))
-		for _, p := range args {
-			path = append(path, p)
-		}
-		return filepath.Join(path...)
+		return filepath.ToSlash(filepath.Join(args...))
 	})
 	return gopter.CombineGens(genVolume(), pathGen).Map(func(args interface{}) string {
 		av := args.([]interface{})
-		return filepath.Join(av[0].(string), av[1].(string))
+		return filepath.ToSlash(filepath.Join(av[0].(string), av[1].(string)))
 	})
 }
 
