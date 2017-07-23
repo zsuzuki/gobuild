@@ -64,6 +64,10 @@ type AppendBuild struct {
 	Deps    bool
 }
 
+func (a *AppendBuild) Equals (b *AppendBuild) bool {
+	return a.Command == b.Command && a.Desc == b.Desc && a.Deps == b.Deps
+}
+
 // BuildCommand is command set for one target file
 type BuildCommand struct {
 	Command          string
