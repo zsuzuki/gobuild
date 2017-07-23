@@ -299,45 +299,51 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 	// Construct other options.
 	for _, o := range getList(conf.Option, info.target) {
-		info.options, err = appendOption(info, info.options, o, optionPrefix)
+		opts, err := makeOptionArgs(info, o, optionPrefix)
 		if err != nil {
 			return nil, err
 		}
+		info.options = append(info.options, opts...)
 	}
 	// Constructs option list for archiver.
 	for _, a := range getList(conf.ArchiveOption, info.target) {
-		info.archiveOptions, err = appendOption(info, info.archiveOptions, a, "")
+		opts, err := makeOptionArgs(info, a, "")
 		if err != nil {
 			return nil, err
 		}
+		info.archiveOptions = append(info.archiveOptions, opts...)
 	}
 	// Constructs option list for converters.
 	for _, c := range getList(conf.ConvertOption, info.target) {
-		info.convertOptions, err = appendOption(info, info.convertOptions, c, "")
+		opts, err := makeOptionArgs(info, c, "")
 		if err != nil {
 			return nil, err
 		}
+		info.convertOptions = append(info.convertOptions, opts...)
 	}
 	// Construct option list for linker.
 	for _, l := range getList(conf.LinkOption, info.target) {
-		info.linkOptions, err = appendOption(info, info.linkOptions, l, optionPrefix)
+		opts, err := makeOptionArgs(info, l, optionPrefix)
 		if err != nil {
 			return nil, err
 		}
+		info.linkOptions = append(info.linkOptions, opts...)
 	}
 	// Constructs system library list.
 	for _, ls := range getList(conf.Libraries, info.target) {
-		info.libraries, err = appendOption(info, info.libraries, ls, optionPrefix+"l")
+		opts, err := makeOptionArgs(info, ls, optionPrefix+"l")
 		if err != nil {
 			return nil, err
 		}
+		info.libraries = append(info.libraries, opts...)
 	}
 	// Constructs library list.
 	for _, ld := range getList(conf.LinkDepend, info.target) {
-		info.linkDepends, err = appendOption(info, info.linkDepends, ld, "")
+		opts, err := makeOptionArgs(info, ld, "")
 		if err != nil {
 			return nil, err
 		}
+		info.linkDepends = append(info.linkDepends, opts...)
 	}
 	// Constructs sub-ninjas
 	for _, subninja := range getList(conf.SubNinja, info.target) {
@@ -667,22 +673,24 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 	return result, nil
 }
 
-//
-// option
-//
-func appendOption(info BuildInfo, lists []string, opt string, optionPrefix string) ([]string, error) {
-	for _, optstr := range strings.Split(optionPrefix+opt, " ") {
-		s, err := info.StrictInterpolate(optstr)
+// makeOptionArgs constructs option arguments from rawOpts.
+// All variable references are resolved here.
+func makeOptionArgs(info BuildInfo, rawOpts string, optionPrefix string) ([]string, error) {
+	options := strings.Split(optionPrefix+rawOpts, " ")
+	result := make([]string, 0, len(options))
+
+	for _, opt := range options {
+		s, err := info.StrictInterpolate(opt)
 		if err != nil {
-			return lists, err
+			return result, err
 		}
 		if strings.ContainsAny(s, " \t") {
-			lists = append(lists, fmt.Sprintf(`"%s"`, s))
+			result = append(result, fmt.Sprintf(`"%s"`, s))
 		} else {
-			lists = append(lists, s)
+			result = append(result, s)
 		}
 	}
-	return lists, nil
+	return result, nil
 }
 
 //
@@ -1073,11 +1081,11 @@ func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Oth
 
 		var optlist []string
 		for _, o := range getList(ot.Option, info.target) {
-			var err error
-			optlist, err = appendOption(info, optlist, o, optPrefix)
+			ol, err := makeOptionArgs(info, o, optPrefix)
 			if err != nil {
 				return errors.Wrapf(err, "failed to construct option list for custom rules")
 			}
+			optlist = append(optlist, ol...)
 		}
 
 		needInclude := false
@@ -1278,7 +1286,7 @@ rule compile
     command = $compile $options -o $out $in
     depfile = $depf
     deps = gcc
-{{- end}}
+{{end}}
 
 {{- if .UsePCH}}
 rule gen_pch
