@@ -122,14 +122,14 @@ func TestInterpolateError(t *testing.T) {
 			})
 		})
 		Convey("WHEN: Interpolate \"${rec}\" (Exceeding recursion limit)", func() {
-			actual, err := Interpolate("${rec}", dict)
+			_, err := Interpolate("${rec}", dict)
 			Convey("THEN: Should cause error", func() {
 				So(err, ShouldNotBeNil)
 				Convey("AND THEN: Should have ExceedRecursionLimit error type", func() {
 					e, ok := err.(*InterpolationError)
 					So(ok, ShouldBeTrue)
 					So(e.Type, ShouldEqual, ExceedRecursionLimit)
-					Printf("actual: \"%s\"", actual)
+					//Printf("actual: \"%s\"", actual)
 				})
 			})
 		})
