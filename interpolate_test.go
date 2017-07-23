@@ -2,8 +2,13 @@ package main
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/leanovate/gopter"
+	"github.com/leanovate/gopter/convey"
+	"github.com/leanovate/gopter/gen"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -13,24 +18,40 @@ type testCase struct {
 }
 
 func TestInterpolateLiteral(t *testing.T) {
-	Convey("GIVEN: A test dictionary", t, func() {
-		dict := newDictionary()
-		for _, v := range []string{"", "literal", "foobarbaz$"} {
-			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\"", v), func() {
-				actual, err := Interpolate(v, dict)
-				Convey(fmt.Sprintf("THEN: Should be \"%s\"", v), func() {
-					So(err, ShouldBeNil)
-					So(actual, ShouldEqual, v)
-				})
+	Convey("GIVEN: A empty dictionary", t, func() {
+		dict := make(map[string]string)
+		g := gen.AnyString().
+			SuchThat(
+				func(arg interface{}) bool {
+					s := arg.(string)
+					return !strings.ContainsAny(s, `${`)
+				}).
+			FlatMap(
+				func(arg interface{}) gopter.Gen {
+					s := arg.(string)
+					return gen.OneConstOf(s, s+"$")
+				},
+				reflect.TypeOf(""))
+
+		Convey(`WHEN: Apply property tests`, func() {
+			condition := func(s string) bool {
+				actual, err := Interpolate(s, dict)
+				return err == nil && actual == s
+			}
+			Convey(`THEN: Should success for all`, func() {
+				So(condition, convey.ShouldSucceedForAll, g)
 			})
-			Convey(fmt.Sprintf("WHEN: Interpolating \"%s\" (strict mode)", v), func() {
-				actual, err := StrictInterpolate(v, dict)
-				Convey(fmt.Sprintf("THEN: Should be \"%s\"", v), func() {
-					So(err, ShouldBeNil)
-					So(actual, ShouldEqual, v)
-				})
+		})
+		Convey(`WHEN: Apply property tests (strict)`, func() {
+			condition := func(s string) bool {
+				actual, err := StrictInterpolate(s, dict)
+
+				return err == nil && actual == s
+			}
+			Convey(`THEN: Should success for all`, func() {
+				So(condition, convey.ShouldSucceedForAll, g)
 			})
-		}
+		})
 	})
 }
 
