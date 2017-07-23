@@ -1151,22 +1151,20 @@ func outputNinja() error {
 
 	var err error
 
-	tPath := NewTransientOutput(option.ninjaFile)
-	if d := filepath.Dir(option.ninjaFile); !Exists(d) {
-		err = os.MkdirAll(d, 0755)
+	tDir := filepath.Dir(option.ninjaFile)
+
+	if !Exists(tDir) {
+		err = os.MkdirAll(tDir, 0755)
 		if err != nil {
 			return err
 		}
 	}
-	file, err := os.Create(tPath.TempOutput)
-	if err != nil {
-		return errors.Wrapf(err, "failed to create temporal output \"%s\"", tPath.TempOutput)
-	}
+	file, err := ioutil.TempFile(tDir, "ninja-")
 	defer (func() {
 		_ = file.Close()
-		_ = tPath.Abort()
+		_ = os.Remove(file.Name())
 	})()
-	Verbose("%s: Creating transient output \"%s\"\n", ProgramName, tPath.TempOutput)
+	Verbose("%s: Creating transient output \"%s\"\n", ProgramName, file.Name())
 	sink := bufio.NewWriter(file)
 
 	tmpl, err := getNinjaTemplate(option.templateFile)
@@ -1226,10 +1224,10 @@ func outputNinja() error {
 	if err := file.Close(); err != nil {
 		return errors.Wrapf(err, "closing \"%s\" failed.", file.Name())
 	}
-	if err := tPath.Commit(); err != nil {
-		return errors.Wrapf(err, "renaming \"%s\" to \"%s\" failed.", tPath.TempOutput, tPath.Output)
+	if err := os.Rename(file.Name(), option.ninjaFile); err != nil {
+		return errors.Wrapf(err, "renaming \"%s\" to \"%s\" failed.", file.Name(), option.ninjaFile)
 	}
-	Verbose("%s: Renaming %s to %s\n", ProgramName, tPath.TempOutput, tPath.Output)
+	Verbose("%s: Renaming %s to %s\n", ProgramName, file.Name(), option.ninjaFile)
 	return nil
 }
 
