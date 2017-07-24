@@ -1356,7 +1356,7 @@ rule compile
 
 rule analyze
     description = Analyzing: $desc
-    command = $analyze --analyze -Xanalyzer -analyzer-output=text $options -o $out $in
+    command = $analyze $options --analyze -Xanalyzer -analyzer-output=plist-multi-file -o $out $in
     depfile = $depf
     deps = gcc
 
@@ -1412,7 +1412,7 @@ rule compile{{- $k}}
     deps = gcc
     {{- end}}
 {{end}}
-{{range $k, $v := .AppendRules}}
+{{- range $k, $v := .AppendRules}}
 rule {{$k}}
     description = {{$v.Desc}}: $desc
     command = {{$v.Command}}
