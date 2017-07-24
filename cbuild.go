@@ -1428,7 +1428,7 @@ rule update_ninja_file
 
 build always: phony
 
-build analyze-all : {{.AnalysisReports | escape_drive | intercalate " "}}
+build analyze-all : phony {{.AnalysisReports | escape_drive | intercalate " "}}
 
 # end of [Rule definitions]
 
