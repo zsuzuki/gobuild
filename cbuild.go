@@ -53,6 +53,7 @@ var (
 		commandList       []*BuildCommand
 		otherRuleFileList []OtherRuleFile
 		scannedConfigs    []string // remembers all scanned configuration files.
+		defaultTargets    []string
 	}
 
 	project struct {
@@ -422,6 +423,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 			}
 			emitContext.commandList = append(emitContext.commandList, libCmd)
 			result = append(subArtifacts, libCmd.OutFile)
+			emitContext.defaultTargets = append(emitContext.defaultTargets, libCmd.OutFile)
 		} else {
 			Warn("There are no files to build in \"%s\".", relChildDir)
 		}
@@ -441,6 +443,9 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 				return nil, err
 			}
 			emitContext.commandList = append(emitContext.commandList, cmds...)
+			for _, t := range cmds {
+				emitContext.defaultTargets = append(emitContext.defaultTargets, t.OutFile)
+			}
 		} else {
 			Warn("There are no files to build in \"%s\".", relChildDir)
 		}
@@ -1042,6 +1047,27 @@ func makeCompileCommands(
 				cmd.Args = append(cmd.Args, "-include-pch", pchCmd.OutFile)
 			}
 			result = append(result, &cmd)
+			subExt := func(s string, newExt string) string {
+				ex := filepath.Ext(s)
+				if len(ex) == 0 {
+					return s + newExt
+				}
+				return s[:len(s)-len(ex)] + newExt
+			}
+			analyzeCmd := BuildCommand{
+				Command:          compiler,
+				CommandType:      "analyze",
+				Args:             carg,
+				InFiles:          []string{srcName},
+				OutFile:          subExt(objName, ".report"),
+				DepFile:          subExt(depName, ".report-d"),
+				NeedCommandAlias: true,
+			}
+			if pchCmd != nil {
+				analyzeCmd.ImplicitDepends = append(cmd.ImplicitDepends, pchCmd.OutFile)
+				analyzeCmd.Args = append(analyzeCmd.Args, "-include-pch", pchCmd.OutFile)
+			}
+			result = append(result, &analyzeCmd)
 		}
 	}
 	return result, artifactPaths, nil
@@ -1214,6 +1240,8 @@ func outputNinja() error {
 		SubNinjas        []string
 		NinjaFile        string
 		ConfigSources    []string
+		AnalysisReports  []string
+		DefaultTargets   []string
 	}
 	osArgs := make([]string, 0, len(os.Args))
 	osArgs = append(osArgs, filepath.ToSlash(os.Args[0]))
@@ -1236,6 +1264,13 @@ func outputNinja() error {
 		SubNinjas:        emitContext.subNinjaList,
 		NinjaFile:        option.ninjaFile,
 		ConfigSources:    emitContext.scannedConfigs,
+		DefaultTargets:   emitContext.defaultTargets,
+	}
+	for _, f := range emitContext.commandList {
+		if f.CommandType != "analyze" {
+			continue
+		}
+		ctx.AnalysisReports = append(ctx.AnalysisReports, f.OutFile)
 	}
 	err = tmpl.Execute(sink, ctx)
 	if err != nil {
@@ -1278,8 +1313,10 @@ func getNinjaTemplate(path string) (*template.Template, error) {
 	const rootName = "root"
 
 	funcs := template.FuncMap{
-		"escape_drive": escapeDriveColon,
-		"join":         strings.Join,
+		"escape_drive":         escapeDriveColon,
+		"join":                 strings.Join,
+		"intercalate":          intercalate,
+		"substitute_extension": substituteExtension,
 	}
 
 	src, err := getNinjaTemplateSource(path)
@@ -1316,6 +1353,12 @@ rule compile
     depfile = $depf
     deps = gcc
 {{end}}
+
+rule analyze
+    description = Analyzing: $desc
+    command = $analyze --analyze -Xanalyzer -analyzer-output=text $options -o $out $in
+    depfile = $depf
+    deps = gcc
 
 {{- if .UsePCH}}
 rule gen_pch
@@ -1384,18 +1427,21 @@ rule update_ninja_file
     generator   = 1
 
 build always: phony
+
+build analyze-all : {{.AnalysisReports | escape_drive | intercalate " "}}
+
 # end of [Rule definitions]
 
 {{- define "IMPDEPS_"}}
-    {{- if .}} | {{escape_drive .}}{{end}}
+    {{- if .}} | {{escape_drive . | intercalate " "}}{{end}}
 {{- end}}
 {{/* Render rules */}}
 
 # Commands
-build {{.NinjaFile | escape_drive}} : update_ninja_file {{escape_drive .ConfigSources}}
+build {{.NinjaFile | escape_drive}} : update_ninja_file {{escape_drive .ConfigSources | intercalate " "}}
     desc = {{.NinjaFile}}
 {{range $c := .Commands}}
-build {{$c.OutFile | escape_drive}} : {{$c.CommandType}} {{escape_drive $c.InFiles}} {{escape_drive $c.Depends}} {{template "IMPDEPS_" $c.ImplicitDepends}}
+build {{$c.OutFile | escape_drive}} : {{$c.CommandType}} {{escape_drive $c.InFiles | intercalate " "}} {{escape_drive $c.Depends | intercalate " "}} {{template "IMPDEPS_" $c.ImplicitDepends}}
     desc = {{$c.OutFile}}
 {{- if $c.NeedCommandAlias}}
     {{$c.CommandType}} = {{$c.Command}}
@@ -1405,7 +1451,7 @@ build {{$c.OutFile | escape_drive}} : {{$c.CommandType}} {{escape_drive $c.InFil
     deps = gcc
 {{- end}}
 {{- if $c.Args}}
-    options = {{join $c.Args " "}}
+    options = {{intercalate " " $c.Args}}
 {{- end}}
 {{end}}
 
@@ -1432,8 +1478,8 @@ build {{$item.Outfile | escape_drive}} : {{$item.Rule}} {{escape_drive $item.Inf
 subninja {{$subninja}}
 {{end}}
 {{end}}
+default {{.DefaultTargets | escape_drive | intercalate " "}}
 `
-
 	return defaultTemplate, nil
 }
 
@@ -1494,8 +1540,24 @@ func JoinPaths(paths ...string) string {
 	return filepath.ToSlash(filepath.Clean(filepath.Join(paths...)))
 }
 
+func intercalate(sep string, arg interface{}) (string, error) {
+	switch v := arg.(type) {
+	case []string:
+		return strings.Join(v, sep), nil
+	case []interface{}:
+		tmp := make([]string, 0, len(v))
+		for _, s := range v {
+			if ss, ok := s.(fmt.Stringer); ok {
+				tmp = append(tmp, ss.String())
+			}
+		}
+		return strings.Join(tmp, sep), nil
+	}
+	return "", errors.Errorf("can't convert \"%v\" to string", arg)
+}
+
 // Escapes ':' in path.
-func escapeDriveColon(arg interface{}) (string, error) {
+func escapeDriveColon(arg interface{}) (interface{}, error) {
 	switch v := arg.(type) {
 	case string:
 		return escapeDriveColon1(v), nil
@@ -1504,7 +1566,7 @@ func escapeDriveColon(arg interface{}) (string, error) {
 		for _, p := range v {
 			tmp = append(tmp, escapeDriveColon1(p))
 		}
-		return strings.Join(tmp, " "), nil
+		return tmp, nil
 	default:
 		if s, ok := arg.(fmt.Stringer); ok {
 			return escapeDriveColon1(s.String()), nil
@@ -1522,6 +1584,24 @@ func escapeDriveColon1(p string) string {
 		}
 	}
 	return p
+}
+
+func substituteExtension(ext string, arg interface{}) (interface{}, error) {
+	switch v := arg.(type) {
+	case string:
+		return ReplaceExtension(v, ext), nil
+	case []string:
+		tmp := make([]string, 0, len(v))
+		for _, p := range v {
+			tmp = append(tmp, ReplaceExtension(p, ext))
+		}
+		return tmp, nil
+	default:
+		if s, ok := arg.(fmt.Stringer); ok {
+			return ReplaceExtension(s.String(), ext), nil
+		}
+	}
+	return nil, errors.Errorf("can't convert \"%v\" to string", arg)
 }
 
 // Verbose output if wanted
