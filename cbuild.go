@@ -227,7 +227,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	//
 	// select target to build.
 	//
-	currentTarget, _, ok := getTarget(info, conf.Target)
+	currentTarget, ok := chooseTarget(info, conf.Target)
 	if !ok {
 		return nil, errors.New("no targets")
 	}
@@ -287,7 +287,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	info.outputdir = JoinPaths(option.outputDir, relChildDir) + "/" // Proofs '/' ending
 
 	// Constructs include path arguments.
-	for _, pth := range getList(conf.Include, info.target) {
+	for _, pth := range filterByBuildTarget(conf.Include, info.target) {
 		const prefix = "$output"
 		if strings.HasPrefix(pth, prefix) {
 			info.AddInclude(JoinPaths(info.outputdir, "output"+pth[len(prefix):]))
@@ -305,11 +305,11 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		}
 	}
 	// Constructs defines.
-	for _, d := range getList(conf.Define, info.target) {
+	for _, d := range filterByBuildTarget(conf.Define, info.target) {
 		info.AddDefines(d)
 	}
 	// Construct other options.
-	for _, o := range getList(conf.Option, info.target) {
+	for _, o := range filterByBuildTarget(conf.Option, info.target) {
 		opts, err := makeOptionArgs(info, o, optionPrefix)
 		if err != nil {
 			return nil, err
@@ -317,7 +317,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		info.options = append(info.options, opts...)
 	}
 	// Constructs option list for archiver.
-	for _, a := range getList(conf.ArchiveOption, info.target) {
+	for _, a := range filterByBuildTarget(conf.ArchiveOption, info.target) {
 		opts, err := makeOptionArgs(info, a, "")
 		if err != nil {
 			return nil, err
@@ -325,7 +325,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		info.archiveOptions = append(info.archiveOptions, opts...)
 	}
 	// Constructs option list for converters.
-	for _, c := range getList(conf.ConvertOption, info.target) {
+	for _, c := range filterByBuildTarget(conf.ConvertOption, info.target) {
 		opts, err := makeOptionArgs(info, c, "")
 		if err != nil {
 			return nil, err
@@ -333,7 +333,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		info.convertOptions = append(info.convertOptions, opts...)
 	}
 	// Construct option list for linker.
-	for _, l := range getList(conf.LinkOption, info.target) {
+	for _, l := range filterByBuildTarget(conf.LinkOption, info.target) {
 		opts, err := makeOptionArgs(info, l, optionPrefix)
 		if err != nil {
 			return nil, err
@@ -341,7 +341,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		info.linkOptions = append(info.linkOptions, opts...)
 	}
 	// Constructs system library list.
-	for _, ls := range getList(conf.Libraries, info.target) {
+	for _, ls := range filterByBuildTarget(conf.Libraries, info.target) {
 		opts, err := makeOptionArgs(info, ls, optionPrefix+"l")
 		if err != nil {
 			return nil, err
@@ -349,7 +349,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		info.libraries = append(info.libraries, opts...)
 	}
 	// Constructs library list.
-	for _, ld := range getList(conf.LinkDepend, info.target) {
+	for _, ld := range filterByBuildTarget(conf.LinkDepend, info.target) {
 		opts, err := makeOptionArgs(info, ld, "")
 		if err != nil {
 			return nil, err
@@ -357,12 +357,12 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		info.linkDepends = append(info.linkDepends, opts...)
 	}
 	// Constructs sub-ninjas
-	for _, subninja := range getList(conf.SubNinja, info.target) {
+	for _, subninja := range filterByBuildTarget(conf.SubNinja, info.target) {
 		emitContext.subNinjaList = append(emitContext.subNinjaList, subninja)
 	}
 
 	// Constructs header files.
-	for _, h := range getList(conf.Headers, info.target) {
+	for _, h := range filterByBuildTarget(conf.Headers, info.target) {
 		h, err = info.StrictInterpolate(h)
 		if err != nil {
 			return nil, err
@@ -375,12 +375,12 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		return nil, err
 	}
 
-	files := getList(conf.Source, info.target)
-	cvfiles := getList(conf.ConvertList, info.target)
-	testfiles := getList(conf.Tests, info.target)
+	files := filterByBuildTarget(conf.Source, info.target)
+	cvfiles := filterByBuildTarget(conf.ConvertList, info.target)
+	testfiles := filterByBuildTarget(conf.Tests, info.target)
 
 	// sub-directories
-	subdirs := getList(conf.Subdirs, info.target)
+	subdirs := filterByBuildTarget(conf.Subdirs, info.target)
 
 	subArtifacts := make([]string, 0, len(subdirs))
 
@@ -482,34 +482,11 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	return result, nil
 }
 
-//
-// Retrieves items associated to `targetName`.
-//
-func getList(block []StringList, targetName string) []string {
+// filterByBuildTarget accumulates items associated to `target` and current build variant.
+func filterByBuildTarget(block []StringList, buildTarget string) []string {
 	lists := make([]string, 0, len(block))
 	for _, item := range block {
-		if item.Match(targetName, option.platform) {
-			appender := func(key interface{}) {
-				if l := item.Items(key); l != nil {
-					lists = append(lists, *l...)
-				}
-			}
-			appender(Common)
-			switch option.variant {
-			case Debug.String():
-				appender(Debug)
-			case Develop.String():
-				appender(Develop)
-			case Release.String():
-				appender(Release)
-			case DevelopRelease.String():
-				appender(DevelopRelease)
-			case Product.String():
-				appender(Product)
-			default:
-				/* NO-OP */
-			}
-		}
+		lists = append (lists, item.GetMatchedItems(buildTarget, option.platform, option.variant)...)
 	}
 	return lists
 }
@@ -710,42 +687,40 @@ func makeOptionArgs(info BuildInfo, rawOpts string, optionPrefix string) ([]stri
 	return result, nil
 }
 
-//
-// target
-//
-func getTarget(info BuildInfo, tlist []Target) (Target, string, bool) {
+// chooseTarget chooses a target matching current build configuration.
+func chooseTarget(info BuildInfo, candidates []Target) (Target, bool) {
 	if 0 < len(info.selectedTarget) {
 		// search target
-		for _, t := range tlist {
+		for _, t := range candidates {
 			if info.selectedTarget == t.Name {
-				return t, "_" + info.selectedTarget, true
+				return t, true
 			}
 		}
-		return Target{}, "", false
+		return Target{}, false
 	}
 
 	if 0 < len(info.target) {
 		// search by_target
-		for _, t := range tlist {
+		for _, t := range candidates {
 			if info.target == t.ByTarget {
-				return t, "_" + info.target, true
+				return t, true
 			}
 		}
 		// search target
-		for _, t := range tlist {
+		for _, t := range candidates {
 			if info.target == t.Name {
-				return t, "_" + info.target, true
+				return t, true
 			}
 		}
 	}
-	if 0 < len(tlist) {
-		t := tlist[0]
+	if 0 < len(candidates) {
+		t := candidates[0]
 		if len(info.target) == 0 {
-			return t, "_" + t.Name, true
+			return t, true
 		}
-		return t, "", true
+		return t, true
 	}
-	return Target{}, "", false
+	return Target{}, false
 }
 
 // FixupCommandPath fixes command path (appeared at the 1st element).
@@ -768,7 +743,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 		}
 
 		// register prebuild
-		sources := getList(build.Source, info.target)
+		sources := filterByBuildTarget(build.Source, info.target)
 		if len(sources) == 0 {
 			return result, errors.Errorf("no sources for command `%s`", build.Name)
 		}
@@ -1129,7 +1104,7 @@ func registerOtherRules(dict *map[string]OtherRule, info BuildInfo, others []Oth
 		ext := ot.Extension
 
 		var optlist []string
-		for _, o := range getList(ot.Option, info.target) {
+		for _, o := range filterByBuildTarget(ot.Option, info.target) {
 			ol, err := makeOptionArgs(info, o, optPrefix)
 			if err != nil {
 				return errors.Wrapf(err, "failed to construct option list for custom rules")

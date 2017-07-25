@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v2"
@@ -18,6 +19,81 @@ const (
 	platformWindows PlatformID = "WIN"
 	platformLinux   PlatformID = "LINUX"
 )
+
+func TestStringList_GetMatchedItems(t *testing.T) {
+	srcYAML := `# YAML Source
+type: [WIN, LINUX, Mac]
+target: foo
+list:
+- list item
+- dummy
+debug:
+- debug item
+- dummy
+release:
+- release item
+- dummy
+develop:
+- develop item
+- dummy
+develop-release:
+- develop-release item
+- dummy
+product:
+- product item
+- dummy
+`
+	Convey(`GIVEN: A StringList`, t, func() {
+		var slist StringList
+		err := yaml.Unmarshal([]byte(srcYAML), &slist)
+		So(err, ShouldBeNil)
+		Convey(`WHEN: call GetMatchedItem ("foo", "LINUX", "product")`, func() {
+			actual := slist.GetMatchedItems("foo", "LINUX", "product")
+			Convey(`THEN: Should match ["list item", "dummy", "product item", "dummy"]`, func() {
+				So(actual, ShouldResemble, []string{"list item", "dummy", "product item", "dummy"})
+			})
+		})
+		Convey(`WHEN: call GetMatchedItem ("foo", "Darwin", "product")`, func() {
+			actual := slist.GetMatchedItems("foo", "Darwin", "product")
+			Convey(`THEN: Should be empty`, func() {
+				So(actual, ShouldBeEmpty)
+			})
+		})
+		Convey(`WHEN: Testing property`, func() {
+			condition := func(buildTarget string, platform string, variant string) bool {
+				actual := slist.GetMatchedItems(buildTarget, platform, variant)
+				// t.Logf("(%s %s %s) = %v", buildTarget, platform, variant, actual)
+				if buildTarget == "dummy" || platform == "unknown" {
+					return len(actual) == 0
+				}
+				if variant == "profile" {
+					return len(actual) == 2 && actual[0] == "list item" && actual[1] == "dummy"
+				}
+				return len(actual) == 4 &&
+					actual[0] == "list item" &&
+					actual[1] == "dummy" &&
+					strings.HasPrefix(actual[2], variant) &&
+					actual[3] == "dummy"
+			}
+			Convey(`THEN: Should satisfy all`, func() {
+				buildTarget := gen.OneConstOf("foo", "dummy")
+				platform := gen.OneConstOf("WIN", "LINUX", "Mac", "unknown")
+				variant := gen.OneConstOf(
+					"debug",
+					"release",
+					"develop",
+					"develop-release",
+					"product",
+					"profile")
+				So(condition, convey.ShouldSucceedForAll,
+					buildTarget.WithLabel("buildTarget"),
+					platform.WithLabel("platform"),
+					variant.WithLabel("variant"),
+				)
+			})
+		})
+	})
+}
 
 func TestUnmarshalStringList(t *testing.T) {
 	srcYAML := `# YAML Source
@@ -148,9 +224,9 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should contain "Mac", "WIN" and "LINUX"`, func() {
-						So(slist.MatchType("LINUX"), ShouldBeTrue)
-						So(slist.MatchType("Mac"), ShouldBeTrue)
-						So(slist.MatchType("WIN"), ShouldBeTrue)
+						So(slist.MatchPlatform("LINUX"), ShouldBeTrue)
+						So(slist.MatchPlatform("Mac"), ShouldBeTrue)
+						So(slist.MatchPlatform("WIN"), ShouldBeTrue)
 					})
 					Convey(`AND THEN: list should be ["item1-2", "dummy-2"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1-2", "dummy-2"})

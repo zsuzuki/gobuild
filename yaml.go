@@ -62,18 +62,18 @@ func (s *StringList) Types() []PlatformID {
 	return s.Platforms.ToSlice()
 }
 
-// MatchType checks `t` is one of the target type of not.
-func (s *StringList) MatchType(t string) bool {
+// MatchPlatform checks t is in the platform set or not.
+func (s *StringList) MatchPlatform(platform string) bool {
 	if s.Platforms == nil {
 		return true // Wildcard
 	}
-	return s.Platforms.Contains(t)
+	return s.Platforms.Contains(platform)
 }
 
 // Match checks build conditions are match or not.
-func (s *StringList) Match(target string, targetType string) bool {
+func (s *StringList) Match(target string, platform string) bool {
 	if len(s.Target) == 0 || s.Target == target {
-		if s.MatchType(targetType) {
+		if s.MatchPlatform(platform) {
 			return true
 		}
 	}
@@ -100,6 +100,35 @@ func (s *StringList) getItems(key string) *[]string {
 		}
 	}
 	return nil
+}
+
+// GetMatchedItems retrieves items matched conditions.
+func (s *StringList) GetMatchedItems(buildTarget string, platform string, variant string) []string {
+	if !s.Match(buildTarget, platform) {
+		return nil
+	}
+	result := make([]string, 0)
+	appender := func(key interface{}) {
+		if l := s.Items(key); l != nil {
+			result = append(result, *l...)
+		}
+	}
+	appender(Common)
+	switch variant {
+	case Debug.String():
+		appender(Debug)
+	case Develop.String():
+		appender(Develop)
+	case Release.String():
+		appender(Release)
+	case DevelopRelease.String():
+		appender(DevelopRelease)
+	case Product.String():
+		appender(Product)
+	default:
+		/* NO-OP */
+	}
+	return result
 }
 
 // UnmarshalYAML is the custom handler for mapping YAML to `StringList`
@@ -211,7 +240,7 @@ func (b *Build) Match(target string, targetType string) bool {
 	return (len(b.Target) == 0 || b.Target == target) && (len(b.Type) == 0 || b.Type.String() == targetType)
 }
 
-// MatchType checks `platform` is in the target platforms.
+//MatchType checks `platform` is in the target platforms.
 func (b *Build) MatchType(platform string) bool {
 	return len(b.Type) == 0 || b.Type.String() == platform
 }
