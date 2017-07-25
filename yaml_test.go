@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v2"
@@ -42,6 +41,9 @@ develop-release:
 product:
 - product item
 - dummy
+instrumentation:
+- instrumentation item
+- dummy
 `
 	Convey(`GIVEN: A StringList`, t, func() {
 		var slist StringList
@@ -72,7 +74,7 @@ product:
 				return len(actual) == 4 &&
 					actual[0] == "list item" &&
 					actual[1] == "dummy" &&
-					strings.HasPrefix(actual[2], variant) &&
+					actual[2] == fmt.Sprintf("%s item", variant) &&
 					actual[3] == "dummy"
 			}
 			Convey(`THEN: Should satisfy all`, func() {
@@ -84,8 +86,11 @@ product:
 					"develop",
 					"develop-release",
 					"product",
-					"profile")
-				So(condition, convey.ShouldSucceedForAll,
+					"instrumentation",
+					"profile",
+				)
+				So(condition,
+					convey.ShouldSucceedForAll,
 					buildTarget.WithLabel("buildTarget"),
 					platform.WithLabel("platform"),
 					variant.WithLabel("variant"),
@@ -117,6 +122,9 @@ develop-release:
 product:
 - product item
 - dummy
+profile:
+- profile item
+- dummy
 `
 	Convey(`GIVEN: A YAML source`, t, func() {
 		Convey("WHEN: Unmarshal", func() {
@@ -125,7 +133,7 @@ product:
 			Convey("THEN: Should success", func() {
 				So(err, ShouldBeNil)
 				Convey("AND THEN: .Type should contain \"Mac\"", func() {
-					So(slist.Types(), ShouldContain, platformMac)
+					So(slist.Platforms(), ShouldContain, platformMac)
 				})
 				Convey("AND THEN: .Target should be \"foo\"", func() {
 					So(slist.Target, ShouldEqual, "foo")
@@ -182,7 +190,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be []`, func() {
-						So(slist.Platforms, ShouldBeNil)
+						So(slist.Platforms(), ShouldBeEmpty)
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})
@@ -203,7 +211,7 @@ list:
 				Convey(`THEN: Should success`, func() {
 					So(err, ShouldBeNil)
 					Convey(`AND THEN: Type should be ["Mac"]`, func() {
-						So(slist.Platforms.ToSlice(), ShouldResemble, []PlatformID{platformMac})
+						So(slist.platforms.ToSlice(), ShouldResemble, []PlatformID{platformMac})
 					})
 					Convey(`AND THEN: list should be ["item1", "dummy"]`, func() {
 						So(*slist.Items("list"), ShouldResemble, []string{"item1", "dummy"})

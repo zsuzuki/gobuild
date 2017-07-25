@@ -50,24 +50,24 @@ type Packager struct {
 type StringList struct {
 	// Target selector
 	Target    string
-	Platforms *PlatformIDSet
+	platforms *PlatformIDSet
 	items     map[string](*[]string)
 }
 
-// Types retrieves list of target platforms.
-func (s *StringList) Types() []PlatformID {
-	if s.Platforms == nil {
+// Platforms retrieves list of target platforms.
+func (s *StringList) Platforms() []PlatformID {
+	if s.platforms == nil {
 		return make([]PlatformID, 0)
 	}
-	return s.Platforms.ToSlice()
+	return s.platforms.ToSlice()
 }
 
 // MatchPlatform checks t is in the platform set or not.
 func (s *StringList) MatchPlatform(platform string) bool {
-	if s.Platforms == nil {
+	if s.platforms == nil {
 		return true // Wildcard
 	}
-	return s.Platforms.Contains(platform)
+	return s.platforms.Contains(platform)
 }
 
 // Match checks build conditions are match or not.
@@ -84,11 +84,13 @@ func (s *StringList) Match(target string, platform string) bool {
 // Key should be a `string` or can convert to `string` (via .String() method)
 // Returns pointer to underlying array (for modifying contents).
 func (s *StringList) Items(key interface{}) *[]string {
-	if k, ok := key.(string); ok {
+	switch k := key.(type) {
+	case string:
 		return s.getItems(k)
-	}
-	if k, ok := key.(fmt.Stringer); ok {
+	case fmt.Stringer:
 		return s.getItems(k.String())
+	default:
+		/*NO-OP*/
 	}
 	return nil
 }
@@ -126,7 +128,7 @@ func (s *StringList) GetMatchedItems(buildTarget string, platform string, varian
 	case Product.String():
 		appender(Product)
 	default:
-		/* NO-OP */
+		appender(variant)
 	}
 	return result
 }
@@ -148,7 +150,7 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 			return err
 		}
 	}
-	s.Platforms = fixedSlot.Types
+	s.platforms = fixedSlot.Types
 	s.Target = fixedSlot.Target
 	s.items = items
 	return nil

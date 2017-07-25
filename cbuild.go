@@ -90,6 +90,7 @@ func main() {
 	flag.BoolVar(&isDevelop, "develop", false, "develop(beta) build")
 	flag.BoolVar(&isDevelopRelease, "develop_release", false, "develop(beta) release build")
 	flag.BoolVar(&isProduct, "product", false, "for production build")
+	flag.StringVar(&option.variant, "variant", "", "Which variant to build (debug, release...)")
 	flag.StringVar(&option.platform, "type", "default", "target platform type")
 	flag.StringVar(&option.targetName, "t", "", "build target name")
 	flag.StringVar(&option.outputRoot, "o", "build", "build directory")
@@ -117,21 +118,23 @@ func main() {
 	}
 	// Temporally sets option.outputDir
 	option.outputDir = option.outputRoot
-	option.variant = Debug.String()
-	if isDebug {
+	if len(option.variant) == 0 {
 		option.variant = Debug.String()
-	}
-	if isProduct {
-		option.variant = Product.String()
-	}
-	if isRelease {
-		option.variant = Release.String()
-	}
-	if isDevelopRelease {
-		option.variant = DevelopRelease.String()
-	}
-	if isDevelop {
-		option.variant = Develop.String()
+		if isDebug {
+			option.variant = Debug.String()
+		}
+		if isProduct {
+			option.variant = Product.String()
+		}
+		if isRelease {
+			option.variant = Release.String()
+		}
+		if isDevelopRelease {
+			option.variant = DevelopRelease.String()
+		}
+		if isDevelop {
+			option.variant = Develop.String()
+		}
 	}
 	emitContext.appendRules = make(map[string]AppendBuild)
 	emitContext.otherRuleList = make(map[string]OtherRule)
@@ -280,7 +283,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 		case Release.String():
 			option.outputDir = JoinPaths(option.outputRoot, option.platform, "Release")
 		default:
-			option.outputDir = JoinPaths(option.outputRoot, option.platform, "Debug")
+			option.outputDir = JoinPaths(option.outputRoot, option.platform, strings.Title(option.variant))
 		}
 	}
 
