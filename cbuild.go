@@ -482,11 +482,11 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	return result, nil
 }
 
-// filterByBuildTarget accumulates items associated to `target` and current build variant.
+// filterByBuildTarget accumulates items associated to `buildTarget` and current build platform/variant.
 func filterByBuildTarget(block []StringList, buildTarget string) []string {
 	lists := make([]string, 0, len(block))
 	for _, item := range block {
-		lists = append (lists, item.GetMatchedItems(buildTarget, option.platform, option.variant)...)
+		lists = append(lists, item.GetMatchedItems(buildTarget, option.platform, option.variant)...)
 	}
 	return lists
 }
@@ -888,16 +888,17 @@ func Basename(path string, args ...string) string {
 }
 
 // Build command for compiling C, C++...
+// Returns command and artifact list.
 func makeCompileCommands(
 	info BuildInfo,
 	otherDict *map[string]OtherRule,
-	loaddir string, files []string) ([]*BuildCommand, []string, error) {
+	loaddir string, files []string) (result []*BuildCommand, artifactPaths []string, err error) {
 
-	artifactPaths := make([]string, 0, len(files))
-	result := make([]*BuildCommand, 0, len(files))
 	if len(files) == 0 {
-		return result, artifactPaths, nil
+		return
 	}
+	artifactPaths = make([]string, 0, len(files))
+	result = make([]*BuildCommand, 0, len(files))
 
 	compiler, err := info.ExpandVariable("compiler")
 	if err != nil {
@@ -919,7 +920,8 @@ func makeCompileCommands(
 		if srcPath[0] == '$' {
 			// Auto generated paths.
 			if strings.HasPrefix(srcPath, "$target/") {
-				dstPathBase = strings.Replace(dstPathBase, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
+				dstPathBase =
+					strings.Replace(dstPathBase, "$target/", fmt.Sprintf("/.%s/", info.target), 1)
 			} else {
 				dstPathBase = srcPath[1:]
 			}
@@ -963,7 +965,8 @@ func makeCompileCommands(
 				if err != nil {
 					return result,
 						artifactPaths,
-						errors.Wrapf(err, "failed to obtain the compiler definition from \"%s\"", rule.Compiler)
+						errors.Wrapf(err, "failed to obtain the compiler definition from \"%s\"",
+							rule.Compiler)
 				}
 				ocmd := OtherRuleFile{
 					Rule:     "compile" + srcExt,
@@ -1263,26 +1266,6 @@ func outputNinja() error {
 	Verbose("%s: Renaming %s to %s\n", ProgramName, file.Name(), option.ninjaFile)
 	return nil
 }
-
-//// Construct a properly folded string from `args`.
-//func fold(args []string, maxColumns int, prefix string) string {
-//	lines := make([]string, 0, 8)
-//	line := ""
-//	maxcol := maxColumns - len(prefix)
-//	emptyPrefix := strings.Repeat(" ", len(prefix))
-//	for _, arg := range args {
-//		if maxcol < len(line)+1+len(arg) {
-//			lines = append(lines, prefix+line)
-//			line = ""
-//			prefix = emptyPrefix
-//		}
-//		line += " " + arg
-//	}
-//	if 0 < len(line) {
-//		lines = append(lines, prefix+line)
-//	}
-//	return strings.Join(lines, " $\n")
-//}
 
 func getNinjaTemplate(path string) (*template.Template, error) {
 	const rootName = "root"
