@@ -25,7 +25,7 @@ import (
 // global variables
 //
 const (
-	cbuildVersion  = "1.1.0"
+	cbuildVersion  = "1.1.1"
 	buildDirectory = "CBuild.dir"
 )
 
@@ -1327,6 +1327,9 @@ build {{$item.Outfile}} : {{$item.Rule}} {{$item.Infile}}
 {{- end}}
 {{- if  $item.Option}}
     option   = {{$item.Option}}
+{{- end}}
+{{- if  $item.Define}}
+    define   = {{$item.Define}}
 {{- end}}
 {{- if  $item.Depend}}
     depf     = {{$item.Depend}}
