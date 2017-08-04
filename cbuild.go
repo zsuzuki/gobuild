@@ -211,7 +211,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	//
 	// select target to build.
 	//
-	currentTarget, _, ok := getTarget(info, conf.Target)
+	currentTarget, selTarget, ok := getTarget(info, conf.Target)
 	if !ok {
 		return nil, errors.New("no targets")
 	}
@@ -382,7 +382,7 @@ func traverse(info BuildInfo, relChildDir string, level int) (*[]string, error) 
 	}
 	emitContext.commandList = append(emitContext.commandList, cmds...)
 	// create compile list
-	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files)
+	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files, selTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +629,7 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 
 	for _, f := range inputs {
 		// first, compile a test driver
-		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f})
+		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f}, "")
 		result = append(result, objcmds...)
 		// then link it as an executable (test_aaa.cpp -> test_aaa)
 		cmds, err := makeLinkCommand(
@@ -835,7 +835,7 @@ func ReplaceExtension(path string, ext string) string {
 func makeCompileCommands(
 	info BuildInfo,
 	otherDict *map[string]OtherRule,
-	loaddir string, files []string) ([]*BuildCommand, []string, error) {
+	loaddir string, files []string, selectedTarget string) ([]*BuildCommand, []string, error) {
 
 	artifactPaths := make([]string, 0, len(files))
 	result := make([]*BuildCommand, 0, len(files))
@@ -847,7 +847,7 @@ func makeCompileCommands(
 	if err != nil {
 		return result, artifactPaths, errors.Wrapf(err, "missing ${compiler} definitions")
 	}
-	pchCmd, err := createPCH(info, loaddir, compiler)
+	pchCmd, err := createPCH(info, loaddir, compiler, selectedTarget)
 	if err != nil {
 		return result, artifactPaths, err
 	}
@@ -869,11 +869,11 @@ func makeCompileCommands(
 			}
 			srcPath = filepath.Join(info.outputdir, dstPathBase)
 			dstPathBase = filepath.Base(dstPathBase)
-			objdir = JoinPaths(filepath.Dir(srcPath), buildDirectory)
+			objdir = JoinPaths(filepath.Dir(srcPath), buildDirectory+selectedTarget)
 		} else {
 			// At this point, `srcPath` is a relative path rooted from `loaddir`
 			tf := filepath.Join(loaddir, srcPath)
-			objdir = JoinPaths(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
+			objdir = JoinPaths(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory+selectedTarget)
 			dstPathBase = filepath.Base(tf)
 			srcPath = tf
 		}
@@ -972,7 +972,7 @@ func makeCompileCommands(
 }
 
 // Create pre-compiled header if possible.
-func createPCH(info BuildInfo, srcdir string, compiler string) (*BuildCommand, error) {
+func createPCH(info BuildInfo, srcdir string, compiler string, selectedTarget string) (*BuildCommand, error) {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := JoinPaths(srcdir, pchName)
 	if !Exists(pchSrc) {
@@ -980,7 +980,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) (*BuildCommand, e
 		return nil, nil
 	}
 	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
-	pchDst := JoinPaths(info.outputdir, srcdir, buildDirectory, pchName+".pch")
+	pchDst := JoinPaths(info.outputdir, srcdir, buildDirectory+selectedTarget, pchName+".pch")
 	Verbose("%s: Create PCH \"%s\"\n", ProgramName, pchDst)
 	args := append(info.includes, info.defines...)
 	for _, opt := range info.options {
