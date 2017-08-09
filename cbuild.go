@@ -230,7 +230,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	//
 	// select target to build.
 	//
-	currentTarget, ok := chooseTarget(info, conf.Target)
+	currentTarget, targetTag, ok := chooseTarget(info, conf.Target)
 	if !ok {
 		return nil, errors.New("no targets")
 	}
@@ -407,7 +407,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	}
 	emitContext.commandList = append(emitContext.commandList, cmds...)
 	// create compile list
-	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files)
+	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files, targetTag)
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +651,7 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 
 	for _, f := range inputs {
 		// first, compile a test driver
-		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f})
+		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f}, "")
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to construct a commmand")
 		}
@@ -691,39 +691,42 @@ func makeOptionArgs(info BuildInfo, rawOpts string, optionPrefix string) ([]stri
 }
 
 // chooseTarget chooses a target matching current build configuration.
-func chooseTarget(info BuildInfo, candidates []Target) (Target, bool) {
+func chooseTarget(info BuildInfo, candidates []Target) (target Target, tag string, found bool) {
+	makeTag := func(s string) string {
+		return "_" + s
+	}
 	if 0 < len(info.selectedTarget) {
 		// search target
 		for _, t := range candidates {
 			if info.selectedTarget == t.Name {
-				return t, true
+				return t, makeTag(t.Name), true
 			}
 		}
-		return Target{}, false
+		return
 	}
 
 	if 0 < len(info.target) {
 		// search by_target
 		for _, t := range candidates {
 			if info.target == t.ByTarget {
-				return t, true
+				return t, makeTag(info.target), true
 			}
 		}
 		// search target
 		for _, t := range candidates {
 			if info.target == t.Name {
-				return t, true
+				return t, makeTag(info.target), true
 			}
 		}
 	}
 	if 0 < len(candidates) {
 		t := candidates[0]
 		if len(info.target) == 0 {
-			return t, true
+			return t, makeTag(t.Name), true
 		}
-		return t, true
+		return t, "", true
 	}
-	return Target{}, false
+	return
 }
 
 // FixupCommandPath fixes command path (appeared at the 1st element).
@@ -895,7 +898,7 @@ func Basename(path string, args ...string) string {
 func makeCompileCommands(
 	info BuildInfo,
 	otherDict *map[string]OtherRule,
-	loaddir string, files []string) (result []*BuildCommand, artifactPaths []string, err error) {
+	loaddir string, files []string, targetTag string) (result []*BuildCommand, artifactPaths []string, err error) {
 
 	if len(files) == 0 {
 		return
@@ -907,7 +910,7 @@ func makeCompileCommands(
 	if err != nil {
 		return result, artifactPaths, errors.Wrapf(err, "missing ${compiler} definitions")
 	}
-	pchCmd, err := createPCH(info, loaddir, compiler)
+	pchCmd, err := createPCH(info, loaddir, compiler, targetTag)
 	if err != nil {
 		return result, artifactPaths, err
 	}
@@ -930,11 +933,11 @@ func makeCompileCommands(
 			}
 			srcPath = filepath.Join(info.outputdir, dstPathBase)
 			dstPathBase = filepath.Base(dstPathBase)
-			objdir = JoinPaths(filepath.Dir(srcPath), buildDirectory)
+			objdir = JoinPaths(filepath.Dir(srcPath), buildDirectory+targetTag)
 		} else {
 			// At this point, `srcPath` is a relative path rooted from `loaddir`
 			tf := filepath.Join(loaddir, srcPath)
-			objdir = JoinPaths(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory)
+			objdir = JoinPaths(filepath.Dir(filepath.Join(info.outputdir, srcPath)), buildDirectory+targetTag)
 			dstPathBase = filepath.Base(tf)
 			srcPath = tf
 		}
@@ -1055,7 +1058,7 @@ func makeCompileCommands(
 }
 
 // Create pre-compiled header if possible.
-func createPCH(info BuildInfo, srcdir string, compiler string) (*BuildCommand, error) {
+func createPCH(info BuildInfo, srcdir string, compiler string, targetTag string) (*BuildCommand, error) {
 	const pchName = "00-common-prefix.hpp"
 	pchSrc := JoinPaths(srcdir, pchName)
 	if !Exists(pchSrc) {
@@ -1063,7 +1066,7 @@ func createPCH(info BuildInfo, srcdir string, compiler string) (*BuildCommand, e
 		return nil, nil
 	}
 	Verbose("%s: \"%s\" found.\n", ProgramName, pchSrc)
-	pchDst := JoinPaths(info.outputdir, srcdir, buildDirectory, pchName+".pch")
+	pchDst := JoinPaths(info.outputdir, srcdir, buildDirectory+targetTag, pchName+".pch")
 	Verbose("%s: Create PCH \"%s\"\n", ProgramName, pchDst)
 	args := append(info.includes, info.defines...)
 	for _, opt := range info.options {
