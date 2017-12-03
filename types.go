@@ -25,7 +25,8 @@ var KnownBuildTypes = [...]KnownBuildType{
 	Release,
 	Develop,
 	DevelopRelease,
-	Product}
+	Product,
+}
 
 // String returns the string representation of the `KnownBuildType`
 func (t KnownBuildType) String() string {
@@ -61,6 +62,10 @@ type AppendBuild struct {
 	Command string
 	Desc    string
 	Deps    bool
+}
+
+func (a *AppendBuild) Equals (b *AppendBuild) bool {
+	return a.Command == b.Command && a.Desc == b.Desc && a.Deps == b.Deps
 }
 
 // BuildCommand is command set for one target file

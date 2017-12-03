@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 // CompileDbItem represents an entry for json compilation database (https://clang.llvm.org/docs/JSONCompilationDatabase.html)

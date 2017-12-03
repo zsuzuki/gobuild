@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
@@ -47,33 +48,32 @@ type Packager struct {
 
 // StringList make.yml string list('- list: ...')
 type StringList struct {
-	types  []string
-	Target string
-	items  map[string](*[]string)
+	// Target selector
+	Target    string
+	platforms *PlatformIDSet
+	items     map[string](*[]string)
 }
 
-// Types retrieves list of target types.
-func (s *StringList) Types() []string {
-	return s.types
+// Platforms retrieves list of target platforms.
+func (s *StringList) Platforms() []PlatformID {
+	if s.platforms == nil {
+		return make([]PlatformID, 0)
+	}
+	return s.platforms.ToSlice()
 }
 
-// MatchType checks `t` is one of the target type of not.
-func (s *StringList) MatchType(t string) bool {
-	if len(s.types) == 0 {
+// MatchPlatform checks t is in the platform set or not.
+func (s *StringList) MatchPlatform(platform string) bool {
+	if s.platforms == nil {
 		return true // Wildcard
 	}
-	for _, v := range s.types {
-		if v == t {
-			return true
-		}
-	}
-	return false
+	return s.platforms.Contains(platform)
 }
 
 // Match checks build conditions are match or not.
-func (s *StringList) Match(target string, targetType string) bool {
+func (s *StringList) Match(target string, platform string) bool {
 	if len(s.Target) == 0 || s.Target == target {
-		if s.MatchType(targetType) {
+		if s.MatchPlatform(platform) {
 			return true
 		}
 	}
@@ -84,11 +84,13 @@ func (s *StringList) Match(target string, targetType string) bool {
 // Key should be a `string` or can convert to `string` (via .String() method)
 // Returns pointer to underlying array (for modifying contents).
 func (s *StringList) Items(key interface{}) *[]string {
-	if k, ok := key.(string); ok {
+	switch k := key.(type) {
+	case string:
 		return s.getItems(k)
-	}
-	if k, ok := key.(fmt.Stringer); ok {
+	case fmt.Stringer:
 		return s.getItems(k.String())
+	default:
+		/*NO-OP*/
 	}
 	return nil
 }
@@ -102,15 +104,44 @@ func (s *StringList) getItems(key string) *[]string {
 	return nil
 }
 
+// GetMatchedItems retrieves items matched conditions.
+func (s *StringList) GetMatchedItems(buildTarget string, platform string, variant string) []string {
+	if !s.Match(buildTarget, platform) {
+		return nil
+	}
+	result := make([]string, 0)
+	appender := func(key interface{}) {
+		if l := s.Items(key); l != nil {
+			result = append(result, *l...)
+		}
+	}
+	appender(Common)
+	switch variant {
+	case Debug.String():
+		appender(Debug)
+	case Develop.String():
+		appender(Develop)
+	case Release.String():
+		appender(Release)
+	case DevelopRelease.String():
+		appender(DevelopRelease)
+	case Product.String():
+		appender(Product)
+	default:
+		appender(variant)
+	}
+	return result
+}
+
 // UnmarshalYAML is the custom handler for mapping YAML to `StringList`
 func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 	var fixedSlot struct {
-		Types  interface{} `yaml:"type"`
+		Types  *PlatformIDSet `yaml:"type"`
 		Target string
 	}
 	err := unmarshaler(&fixedSlot)
 	if err != nil {
-		return errors.Wrapf(err, "unmarshaling failed on `StringList` fixed slot")
+		return errors.Wrapf(err, "unmarshaling failed on `StringList` fixed slots")
 	}
 	var items map[string]*[]string
 	err = unmarshaler(&items)
@@ -119,19 +150,7 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 			return err
 		}
 	}
-	switch v := fixedSlot.Types.(type) {
-	case string:
-		s.types = []string{v}
-	case []interface{}:
-		for _, t := range v {
-			s.types = append(s.types, t.(string))
-		}
-	case nil:
-		/*NO-OP*/
-	default:
-		panic(fmt.Sprintf("type: %v", v))
-	}
-	//s.types = fixedSlot.Type
+	s.platforms = fixedSlot.Types
 	s.Target = fixedSlot.Target
 	s.items = items
 	return nil
@@ -139,34 +158,109 @@ func (s *StringList) UnmarshalYAML(unmarshaler func(interface{}) error) error {
 
 // Variable make.yml variable section
 type Variable struct {
-	Name   string
-	Value  string
-	Type   string
-	Target string
-	Build  string
+	Name      string
+	Value     string
+	Platforms *PlatformIDSet `yaml:"type"`
+	Target    string
+	Build     string
+}
+
+// Equals checks v == other.
+func (v *Variable) Equals(other *Variable) bool {
+	if !(v.Name == other.Name &&
+		v.Value == other.Value &&
+		v.Target == other.Target &&
+		v.Build == other.Build) {
+		return false
+	}
+	if v.Platforms == nil {
+		if other.Platforms == nil {
+			return true
+		}
+		return false
+	}
+	return v.Platforms.Equals(*other.Platforms)
+}
+
+// MatchPlatform checks supplied platform `s` is matched or not.
+func (v *Variable) MatchPlatform(platform string) bool {
+	if v.Platforms == nil {
+		return true
+	}
+	return v.Platforms.Contains(platform)
+}
+
+// GetMatchedValue returns the value of this variable if conditions met.
+func (v *Variable) GetMatchedValue(target string, platform string, variant string) (result string, ok bool) {
+	if !v.MatchPlatform(platform) {
+		return
+	}
+	if 0 < len(v.Target) && v.Target != target {
+		return
+	}
+	if 0 < len(v.Build) {
+		bld := strings.ToLower(v.Build)
+		switch variant {
+		case Debug.String():
+			if bld != "debug" {
+				return
+			}
+		case Release.String():
+			if bld != "release" {
+				return
+			}
+		case Develop.String():
+			if bld != "develop" {
+				return
+			}
+		case DevelopRelease.String():
+			if bld != "develop_release" {
+				return
+			}
+		case Product.String():
+			if bld != "product" {
+				return
+			}
+		}
+	}
+	return v.Value, true
 }
 
 // Build in directory source list
+// Build describes
 type Build struct {
 	Name    string
 	Command string
 	Target  string
-	Type    string
+	Type    PlatformID
 	Deps    string
 	Source  []StringList `yaml:",flow"`
 }
 
 // Match returns `true` if build target and target-type matched.
 func (b *Build) Match(target string, targetType string) bool {
-	return (b.Target == "" || b.Target == target) && (b.Type == "" || b.Type == targetType)
+	return (len(b.Target) == 0 || b.Target == target) && (len(b.Type) == 0 || b.Type.String() == targetType)
+}
+
+//MatchType checks `platform` is in the target platforms.
+func (b *Build) MatchType(platform string) bool {
+	return len(b.Type) == 0 || b.Type.String() == platform
 }
 
 // Other make.yml other section
 type Other struct {
-	Ext         string
-	Command     string
-	Description string
-	NeedDepend  bool `yaml:"need_depend"`
-	Type        string
-	Option      []StringList `yaml:",flow"`
+	Extension   string         `yaml:"ext"`
+	Command     string         `yaml:"command"`
+	Description string         `yaml:"description"`
+	NeedDepend  bool           `yaml:"need_depend"`
+	Platforms   *PlatformIDSet `yaml:"type"`
+	Option      []StringList   `yaml:"option,flow"`
+}
+
+// MatchPlatform checks `platform` is in the set or not.
+func (o *Other) MatchPlatform(platform string) bool {
+	if o.Platforms == nil {
+		return true
+	}
+	return o.Platforms.Contains(platform)
 }
