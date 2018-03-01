@@ -25,7 +25,7 @@ import (
 // global variables
 //
 const (
-	cbuildVersion  = "1.1.1"
+	cbuildVersion  = "1.1.2"
 	buildDirectory = "CBuild.dir"
 )
 
@@ -1218,6 +1218,7 @@ func outputNinja() error {
 		UseResponse        bool
 		NewlineAsDelimiter bool
 		GroupArchives      bool
+		CompilerLauncher   string
 
 		Commands         []*BuildCommand
 		OtherRuleTargets []OtherRuleFile
@@ -1242,6 +1243,7 @@ func outputNinja() error {
 		UsePCH:             true,
 		UseDepsMsvc:        useDepsMsvc,
 		NinjaUpdater:       strings.Join(osArgs, " "),
+		CompilerLauncher:   FindCompilerLauncher(),
 
 		Commands:         emitContext.commandList,
 		OtherRuleTargets: emitContext.otherRuleFileList,
@@ -1305,7 +1307,7 @@ builddir = {{.OutputDirectory}}
 rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
-    command = $compile $options -Fo$out $in
+    command = {{.CompilerLauncher}} $compile $options -Fo$out $in
     {{- if .UseDepsMsvc}}
     deps = msvc
     {{- else}}
@@ -1313,7 +1315,7 @@ rule compile
     deps = gcc
     {{- end}}
 {{- else}}
-    command = $compile $options -o $out $in
+    command = {{.CompilerLauncher}} $compile $options -o $out $in
     depfile = $depf
     deps = gcc
 {{end}}
