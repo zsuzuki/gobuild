@@ -25,20 +25,21 @@ import (
 // global variables
 //
 const (
-	cbuildVersion  = "1.1.1"
+	cbuildVersion  = "1.1.2"
 	buildDirectory = "CBuild.dir"
 )
 
 var (
 	option struct {
-		platform     string
-		targetName   string
-		outputDir    string
-		outputRoot   string
-		verbose      bool
-		ninjaFile    string
-		variant      string
-		templateFile string
+		platform            string
+		targetName          string
+		outputDir           string
+		outputRoot          string
+		verbose             bool
+		ninjaFile           string
+		variant             string
+		templateFile        string
+		useCompilerLauncher bool
 	}
 
 	useResponse     bool
@@ -96,6 +97,7 @@ func main() {
 	flag.StringVar(&option.outputRoot, "o", "build", "build directory")
 	flag.StringVar(&option.ninjaFile, "f", "build.ninja", "output build.ninja filename")
 	flag.StringVar(&option.templateFile, "template", "", "Use external template file")
+	flag.BoolVar(&option.useCompilerLauncher, "use-compiler-launcher", false, "Use compiler launcher")
 	genMSBuild := flag.Bool("msbuild", false, "Export MSBuild project")
 	projdir := flag.String("msbuild-dir", "./", "MSBuild project output directory")
 	projname := flag.String("msbuild-proj", "out", "MSBuild project name")
@@ -1218,6 +1220,7 @@ func outputNinja() error {
 		UseResponse        bool
 		NewlineAsDelimiter bool
 		GroupArchives      bool
+		CompilerLauncher   string
 
 		Commands         []*BuildCommand
 		OtherRuleTargets []OtherRuleFile
@@ -1230,6 +1233,10 @@ func outputNinja() error {
 	osArgs := make([]string, 0, len(os.Args))
 	osArgs = append(osArgs, filepath.ToSlash(os.Args[0]))
 	osArgs = append(osArgs, os.Args[1:]...)
+	launcher := ""
+	if option.useCompilerLauncher {
+		launcher = FindCompilerLauncher()
+	}
 	ctx := WriteContext{
 		TemplateFile:       option.templateFile,
 		Platform:           option.platform,
@@ -1242,6 +1249,7 @@ func outputNinja() error {
 		UsePCH:             true,
 		UseDepsMsvc:        useDepsMsvc,
 		NinjaUpdater:       strings.Join(osArgs, " "),
+		CompilerLauncher:   launcher,
 
 		Commands:         emitContext.commandList,
 		OtherRuleTargets: emitContext.otherRuleFileList,
@@ -1305,7 +1313,7 @@ builddir = {{.OutputDirectory}}
 rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
-    command = $compile $options -Fo$out $in
+    command = {{.CompilerLauncher}} $compile $options -Fo$out $in
     {{- if .UseDepsMsvc}}
     deps = msvc
     {{- else}}
@@ -1313,7 +1321,7 @@ rule compile
     deps = gcc
     {{- end}}
 {{- else}}
-    command = $compile $options -o $out $in
+    command = {{.CompilerLauncher}} $compile $options -o $out $in
     depfile = $depf
     deps = gcc
 {{end}}

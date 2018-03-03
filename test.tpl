@@ -28,14 +28,14 @@ builddir = {{.OutputDirectory}}
 rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
-    command = $compile $options -Fo$out $in
+    command = {{.CompilerLauncher}} $compile $options -Fo$out $in
     {{- if eq .UseDepsMsvc}}
     deps = msvc
     {{- else}}
     deps = gcc
     {{- end}}
 {{- else}}
-    command = $compile $options -o $out $in
+    command = {{.CompilerLauncher}} $compile $options -o $out $in
     depfile = $depf
     deps = gcc
 {{- end}}
