@@ -64,7 +64,7 @@ type AppendBuild struct {
 	Deps    bool
 }
 
-func (a *AppendBuild) Equals (b *AppendBuild) bool {
+func (a *AppendBuild) Equals(b *AppendBuild) bool {
 	return a.Command == b.Command && a.Desc == b.Desc && a.Deps == b.Deps
 }
 
@@ -80,4 +80,5 @@ type BuildCommand struct {
 	Depends          []string
 	ImplicitDepends  []string
 	NeedCommandAlias bool
+	Project          string
 }

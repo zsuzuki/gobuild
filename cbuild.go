@@ -520,6 +520,7 @@ func makeArchiveCommand(info BuildInfo, inputs []string, libName string) (*Build
 		CommandType: "ar",
 		Args:        info.archiveOptions,
 		InFiles:     inputs,
+		Project:     libName,
 		OutFile: (func() string {
 			switch option.platform {
 			case "WIN32":
@@ -567,6 +568,7 @@ func makeLinkCommand(
 		OutFile:          targetPath,
 		Depends:          info.linkDepends,
 		NeedCommandAlias: true,
+		Project:          info.target,
 	}
 	result = append(result, &cmd)
 	//fmt.Println("-o " + NowTarget.Name + flist)
@@ -627,6 +629,7 @@ func makeConvertCommand(
 		InFiles:          inFiles,
 		OutFile:          outFile,
 		NeedCommandAlias: true,
+		Project:          info.target,
 	}
 	return &cmd, nil
 }
@@ -834,6 +837,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 				InFiles:          sources,
 				OutFile:          JoinPaths(outfile),
 				NeedCommandAlias: false,
+				Project:          info.target,
 			}
 			//commandList = append(commandList, &cmd)
 			result = append(result, &cmd)
@@ -853,6 +857,7 @@ func makePreBuildCommands(info BuildInfo, loaddir string, buildItems []Build) ([
 					InFiles:          []string{src},
 					OutFile:          JoinPaths(outfile),
 					NeedCommandAlias: false,
+					Project:          info.target,
 				}
 				//commandList = append(commandList, &cmd)
 				result = append(result, &cmd)
@@ -1027,7 +1032,9 @@ func makeCompileCommands(
 				InFiles:          []string{srcName},
 				OutFile:          objName,
 				DepFile:          depName,
-				NeedCommandAlias: true}
+				NeedCommandAlias: true,
+				Project:          info.target,
+			}
 			if pchCmd != nil {
 				cmd.ImplicitDepends = append(cmd.ImplicitDepends, pchCmd.OutFile)
 				cmd.Args = append(cmd.Args, "-include-pch", pchCmd.OutFile)
@@ -1048,6 +1055,7 @@ func makeCompileCommands(
 				OutFile:          subExt(objName, ".report"),
 				DepFile:          subExt(depName, ".report-d"),
 				NeedCommandAlias: true,
+				Project:          info.target,
 			}
 			if pchCmd != nil {
 				analyzeCmd.ImplicitDepends = append(cmd.ImplicitDepends, pchCmd.OutFile)
@@ -1094,7 +1102,9 @@ func createPCH(info BuildInfo, srcdir string, compiler string, targetTag string)
 		InFiles:          []string{pchSrc},
 		OutFile:          pchDst,
 		DepFile:          pchDst + ".dep",
-		NeedCommandAlias: true}
+		NeedCommandAlias: true,
+		Project:          info.target,
+	}
 	return &cmd, nil
 }
 
@@ -1236,6 +1246,9 @@ func outputNinja() error {
 	launcher := ""
 	if option.useCompilerLauncher {
 		launcher = FindCompilerLauncher()
+		if launcher != "" {
+			launcher = "\"" + launcher + "\""
+		}
 	}
 	ctx := WriteContext{
 		TemplateFile:       option.templateFile,
@@ -1313,7 +1326,7 @@ builddir = {{.OutputDirectory}}
 rule compile
     description = Compiling: $desc
 {{- if eq .Platform "WIN32"}}
-    command = {{.CompilerLauncher}} $compile $options -Fo$out $in
+    command = {{.CompilerLauncher}} "$compile" $options -Fo$out $in
     {{- if .UseDepsMsvc}}
     deps = msvc
     {{- else}}
@@ -1321,7 +1334,7 @@ rule compile
     deps = gcc
     {{- end}}
 {{- else}}
-    command = {{.CompilerLauncher}} $compile $options -o $out $in
+    command = {{.CompilerLauncher}} "$compile" $options -o $out $in
     depfile = $depf
     deps = gcc
 {{end}}
@@ -1424,6 +1437,9 @@ build {{$c.OutFile | escape_drive}} : {{$c.CommandType}} {{escape_drive $c.InFil
 {{- end}}
 {{- if $c.Args}}
     options = {{intercalate " " $c.Args}}
+{{- end}}
+{{- if $c.Project}}
+    project = {{$c.Project}}
 {{- end}}
 {{end}}
 
