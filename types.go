@@ -55,6 +55,7 @@ type OtherRuleFile struct {
 	Option   string
 	Define   string
 	Depend   string
+	Project  string
 }
 
 // AppendBuild ...

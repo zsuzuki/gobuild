@@ -10,7 +10,7 @@ import (
 func FindCompilerLauncher() string {
 	dir, ok := os.LookupEnv("SCE_ROOT_DIR")
 	if ok {
-		lancherPath := filepath.Join(dir, "Common", "SN-DBS", "bin", "dbsbuild.exe")
+		lancherPath := filepath.Join(dir, "Common", "SN-DBS", "bin", "dbsbuild64.exe")
 		if _, err := os.Stat(lancherPath); err == nil {
 			return filepath.ToSlash(filepath.Clean(lancherPath))
 		}

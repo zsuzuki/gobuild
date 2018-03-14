@@ -409,7 +409,7 @@ func traverse(info BuildInfo, relChildDir string, level int) ([]string, error) {
 	}
 	emitContext.commandList = append(emitContext.commandList, cmds...)
 	// create compile list
-	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files, targetTag)
+	cmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, relChildDir, files, targetTag, currentTarget.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +656,7 @@ func createTest(info BuildInfo, inputs []string, loaddir string) ([]*BuildComman
 
 	for _, f := range inputs {
 		// first, compile a test driver
-		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f}, "")
+		objcmds, artifacts, err := makeCompileCommands(info, &emitContext.otherRuleList, loaddir, []string{f}, "", "")
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to construct a commmand")
 		}
@@ -905,7 +905,7 @@ func Basename(path string, args ...string) string {
 func makeCompileCommands(
 	info BuildInfo,
 	otherDict *map[string]OtherRule,
-	loaddir string, files []string, targetTag string) (result []*BuildCommand, artifactPaths []string, err error) {
+	loaddir string, files []string, targetTag, projectName string) (result []*BuildCommand, artifactPaths []string, err error) {
 
 	if len(files) == 0 {
 		return
@@ -971,6 +971,10 @@ func makeCompileCommands(
 			carg = append(carg, ca)
 		}
 		srcExt := filepath.Ext(srcPath)
+		targetProject := projectName
+		if targetProject == "" {
+			targetProject = info.target
+		}
 		if rule, exists := (*otherDict)[srcExt]; exists {
 			// Custom rules
 			if customCompiler, ok := info.variables[rule.Compiler]; ok {
@@ -1013,7 +1017,9 @@ func makeCompileCommands(
 							return ""
 						}
 						return strings.Join(info.defines, " ")
-					})()}
+					})(),
+					Project: targetProject,
+				}
 				if rule.NeedDepend == true {
 					ocmd.Depend = depName
 				}
@@ -1033,7 +1039,7 @@ func makeCompileCommands(
 				OutFile:          objName,
 				DepFile:          depName,
 				NeedCommandAlias: true,
-				Project:          info.target,
+				Project:          targetProject,
 			}
 			if pchCmd != nil {
 				cmd.ImplicitDepends = append(cmd.ImplicitDepends, pchCmd.OutFile)
@@ -1055,7 +1061,7 @@ func makeCompileCommands(
 				OutFile:          subExt(objName, ".report"),
 				DepFile:          subExt(depName, ".report-d"),
 				NeedCommandAlias: true,
-				Project:          info.target,
+				Project:          targetProject,
 			}
 			if pchCmd != nil {
 				analyzeCmd.ImplicitDepends = append(cmd.ImplicitDepends, pchCmd.OutFile)
@@ -1247,7 +1253,7 @@ func outputNinja() error {
 	if option.useCompilerLauncher {
 		launcher = FindCompilerLauncher()
 		if launcher != "" {
-			launcher = "\"" + launcher + "\""
+			launcher = "\"" + launcher + "\" -p $project"
 		}
 	}
 	ctx := WriteContext{
@@ -1356,11 +1362,11 @@ rule gen_pch
 rule ar
     description = Archiving: $desc
 {{- if .UseResponse}}
-    command = $ar $options {{if eq .Platform "WIN32"}}/out:$out{{else}}$out{{end}} @$out.rsp
+    command = {{.CompilerLauncher}} "$ar" $options {{if eq .Platform "WIN32"}}/out:$out{{else}}$out{{end}} @$out.rsp
     rspfile = $out.rsp
     rspfile_content = {{if .NewlineAsDelimiter}}$in_newline{{else}}$in{{end}}
 {{- else}}
-    command = $ar $options $out $in
+    command = {{.CompilerLauncher}} "$ar" $options $out $in
 {{- end}}
 
 rule link
@@ -1454,11 +1460,14 @@ build {{$item.Outfile | escape_drive}} : {{$item.Rule}} {{escape_drive $item.Inf
 {{- if  $item.Option}}
     option   = {{$item.Option}}
 {{- end}}
-{{- if  $item.Define}}
+{{- if $item.Define}}
     define   = {{$item.Define}}
 {{- end}}
-{{- if  $item.Depend}}
+{{- if $item.Depend}}
     depf     = {{$item.Depend}}
+{{- end}}
+{{- if $item.Project}}
+    project = {{$item.Project}}
 {{- end}}
 {{end}}
 {{- if .SubNinjas}}
