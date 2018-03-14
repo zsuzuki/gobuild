@@ -1362,7 +1362,7 @@ rule gen_pch
 rule ar
     description = Archiving: $desc
 {{- if .UseResponse}}
-    command = {{.CompilerLauncher}} "$ar" $options {{if eq .Platform "WIN32"}}/out:$out{{else}}$out{{end}} @$out.rsp
+    command = $ar $options {{if eq .Platform "WIN32"}}/out:$out{{else}}$out{{end}} @$out.rsp
     rspfile = $out.rsp
     rspfile_content = {{if .NewlineAsDelimiter}}$in_newline{{else}}$in{{end}}
 {{- else}}
